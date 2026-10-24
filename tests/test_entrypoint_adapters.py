@@ -78,6 +78,14 @@ async def test_stroke_symptoms_escalate_to_c1_and_persist_time_critical_task():
         assert task.tier == "C1"
         assert task.hospital == "stroke_unit_or_tertiary"
         assert task.is_time_critical is True
+        # save_triage_snapshot: the dashboard's raw/interpreted/confidence
+        # panel reads this, and the raw identifier must never land here —
+        # only its hash.
+        assert task.triage_snapshot is not None
+        assert task.triage_snapshot["symptoms"] == ["facial_droop"]
+        assert task.triage_snapshot["speech_onset"] == "new"
+        assert task.patient_identifier_hash != "9999999999"
+        assert task.patient_identifier_hash  # non-empty
 
     workflow.close()
 

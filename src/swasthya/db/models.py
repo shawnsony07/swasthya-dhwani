@@ -47,6 +47,14 @@ class Task(Base):
     awaiting_approval_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The dashboard's alert card (architecture.md section 12) shows raw
+    # transcript, interpreted text, and confidence side by side so a nurse
+    # can see what the machine heard — this is the one place a raw
+    # transcript is deliberately persisted, not logged (S9 is about logs/
+    # traces, not this kind of durable clinical record). A JSON blob,
+    # not normalized columns, because it's a point-in-time snapshot for
+    # display, not something the workflow state machine queries by field.
+    triage_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )

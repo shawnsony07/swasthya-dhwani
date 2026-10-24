@@ -27,6 +27,7 @@ from swasthya.contracts import SpeechOnset, TaskState, Tier, TriageData, TriageR
 from swasthya.db.models import Task
 from swasthya.db.session import build_engine, build_session_factory, create_all
 from swasthya.fhir import adapter as fhir_adapter
+from swasthya.fhir.redact import hash_identifier
 from swasthya.protocol.kerala_protocol_mcp import apply_acuity_floor, query_triage_protocol
 from swasthya.voice.agent import MalayalamTriageAgent
 from swasthya.voice.conversation import ConversationOrchestrator
@@ -111,6 +112,30 @@ class _WorkflowSinkAdapter:
         transition(
             self._session, task_id, TaskState.HUMAN_HANDOFF, actor="rule_engine", reason=reason
         )
+        self._session.commit()
+
+    def save_triage_snapshot(self, task_id: str, triage: TriageData) -> None:
+        task = self._session.get(Task, task_id)
+        if task is None:
+            raise TaskNotFoundError(task_id)
+        # `submit_task` (above) creates the row before the identifier is
+        # known to this adapter, so this is where `patient_identifier_hash`
+        # actually gets set — never the raw identifier itself, matching the
+        # S9 constraint the column's own docstring states.
+        task.patient_identifier_hash = hash_identifier(triage.patient_identifier)
+        task.triage_snapshot = {
+            "raw_transcript": triage.raw_transcript,
+            "interpreted_text": triage.interpreted_text,
+            "interpretation_confidence": triage.interpretation_confidence,
+            "symptoms": triage.symptoms,
+            "symptom_duration_days": triage.symptom_duration_days,
+            "warning_signs_present": triage.warning_signs_present,
+            "speech_impairment_signals": triage.speech_impairment_signals,
+            "speech_onset": triage.speech_onset.value,
+            "confirmed_by": triage.confirmed_by.value,
+            "interpreter_model": triage.interpreter_model,
+            "protocol_version": triage.protocol_version,
+        }
         self._session.commit()
 
 

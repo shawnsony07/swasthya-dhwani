@@ -343,6 +343,7 @@ class ConversationOrchestrator:
             )
             task_id = self._workflow.submit_task(is_time_critical=False)
             state.task_id = task_id
+            self._workflow.save_triage_snapshot(task_id, triage_data)
             self._workflow.mark_human_handoff(
                 task_id, reason=result.no_match_reason or "No matching protocol condition."
             )
@@ -378,6 +379,7 @@ class ConversationOrchestrator:
 
         task_id = self._workflow.submit_task(is_time_critical=is_time_critical)
         state.task_id = task_id
+        self._workflow.save_triage_snapshot(task_id, triage_data)
         self._workflow.mark_awaiting_approval(
             task_id, result.tier, result.hospital_tier_required
         )
@@ -509,6 +511,7 @@ class ConversationOrchestrator:
         _, fhir_write_failed = await self._record_triage_best_effort(partial)
         task_id = self._workflow.submit_task(is_time_critical=state.is_time_critical)
         state.task_id = task_id
+        self._workflow.save_triage_snapshot(task_id, partial)
         self._workflow.mark_human_handoff(
             task_id, reason="Call abandoned (silence/disconnect) with partial facts confirmed."
         )

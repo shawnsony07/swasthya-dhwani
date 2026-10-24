@@ -66,6 +66,9 @@ class FakeWorkflowSink:
     def mark_human_handoff(self, task_id: str, reason: str) -> None:
         self.calls.append(("mark_human_handoff", task_id, reason))
 
+    def save_triage_snapshot(self, task_id: str, triage) -> None:
+        self.calls.append(("save_triage_snapshot", task_id, triage))
+
 
 @dataclass
 class FakeFhirSink:
@@ -299,7 +302,8 @@ async def test_full_happy_path_calls_rule_engine_and_workflow_in_order_and_retur
     assert len(engine.query_calls) == 1
     assert len(engine.floor_calls) == 1
     assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1] == ("mark_awaiting_approval", "task-happy", Tier.B, "taluk")
+    assert sink.calls[1][0] == "save_triage_snapshot"
+    assert sink.calls[2] == ("mark_awaiting_approval", "task-happy", Tier.B, "taluk")
 
     # FHIR writes happen, in order, before the workflow sink is touched.
     assert [call[0] for call in fhir.calls] == ["record_triage", "record_referral"]
@@ -320,7 +324,8 @@ async def test_no_match_still_records_triage_but_never_calls_record_referral():
     assert outcome.task_id == "task-nomatch"
     assert outcome.fhir_write_failed is False
     assert sink.calls[0] == ("submit_task", False)
-    assert sink.calls[1] == (
+    assert sink.calls[1][0] == "save_triage_snapshot"
+    assert sink.calls[2] == (
         "mark_human_handoff",
         "task-nomatch",
         "unrecognised symptom combination",
@@ -346,7 +351,8 @@ async def test_fhir_outage_on_record_triage_does_not_block_referral():
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert outcome.fhir_write_failed is True
     assert sink.calls[0] == ("submit_task", False)
-    assert sink.calls[1][0] == "mark_awaiting_approval"
+    assert sink.calls[1][0] == "save_triage_snapshot"
+    assert sink.calls[2][0] == "mark_awaiting_approval"
 
     # record_triage raised, so there is no patient_fhir_id to refer against —
     # record_referral is skipped rather than called with a bogus id.
@@ -365,7 +371,8 @@ async def test_fhir_outage_on_record_triage_does_not_block_human_handoff():
     assert outcome.kind == ConversationOutcomeKind.HUMAN_HANDOFF
     assert outcome.fhir_write_failed is True
     assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1][0] == "mark_human_handoff"
+    assert sink.calls[1][0] == "save_triage_snapshot"
+    assert sink.calls[2][0] == "mark_human_handoff"
 
 
 async def test_fhir_outage_on_record_referral_still_returns_referral_ready():
@@ -380,7 +387,8 @@ async def test_fhir_outage_on_record_referral_still_returns_referral_ready():
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert outcome.fhir_write_failed is True
     assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1][0] == "mark_awaiting_approval"
+    assert sink.calls[1][0] == "save_triage_snapshot"
+    assert sink.calls[2][0] == "mark_awaiting_approval"
     assert [call[0] for call in fhir.calls] == ["record_triage", "record_referral"]
 
 
@@ -469,7 +477,8 @@ async def test_silence_with_at_least_one_confirmed_fact_creates_callback_task(or
     assert outcome.triage_data is not None
     assert outcome.fhir_write_failed is False
     assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1][0] == "mark_human_handoff"
+    assert sink.calls[1][0] == "save_triage_snapshot"
+    assert sink.calls[2][0] == "mark_human_handoff"
     # Partial data is saved best-effort (architecture.md F6) when any fact
     # was confirmed.
     assert [call[0] for call in fhir.calls] == ["record_triage"]
@@ -488,4 +497,5 @@ async def test_silence_fhir_outage_still_creates_callback_task():
     assert outcome.kind == ConversationOutcomeKind.ABANDONED_WITH_CALLBACK
     assert outcome.fhir_write_failed is True
     assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1][0] == "mark_human_handoff"
+    assert sink.calls[1][0] == "save_triage_snapshot"
+    assert sink.calls[2][0] == "mark_human_handoff"

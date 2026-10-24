@@ -92,6 +92,15 @@ class WorkflowSink(Protocol):
 
     def mark_human_handoff(self, task_id: str, reason: str) -> None: ...
 
+    def save_triage_snapshot(self, task_id: str, triage: TriageData) -> None:
+        """Persists the raw transcript / interpreted text / confidence /
+        symptoms snapshot the doctor dashboard displays (architecture.md
+        section 12's "raw vs interpreted vs confidence panel"). Called once
+        a case reaches a referral or handoff decision — never for a case
+        still mid-confirmation, since the snapshot should reflect the final
+        confirmed facts, not an in-progress guess."""
+        ...
+
 
 class FhirSink(Protocol):
     """The subset of `swasthya.fhir.adapter` the orchestrator needs to
