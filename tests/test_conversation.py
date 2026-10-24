@@ -410,9 +410,10 @@ async def test_fhir_outage_on_record_referral_still_returns_referral_ready():
 
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert outcome.fhir_write_failed is True
-    assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1][0] == "save_triage_snapshot"
-    assert sink.calls[2][0] == "mark_awaiting_approval"
+    assert sink.calls[0][0] == "find_open_task_for_identifier"
+    assert sink.calls[1][0] == "submit_task"
+    assert sink.calls[2][0] == "save_triage_snapshot"
+    assert sink.calls[3][0] == "mark_awaiting_approval"
     assert [call[0] for call in fhir.calls] == ["record_triage", "record_referral"]
 
 
@@ -439,7 +440,8 @@ async def test_stroke_floor_triggered_case_submits_time_critical_true():
 
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert outcome.tier == Tier.C1
-    assert sink.calls[0] == ("submit_task", True)
+    assert sink.calls[0][0] == "find_open_task_for_identifier"
+    assert sink.calls[1] == ("submit_task", True)
 
 
 async def test_routine_case_submits_time_critical_false():
@@ -452,7 +454,8 @@ async def test_routine_case_submits_time_critical_false():
     outcome = await _confirm_all_required(orch, state)
 
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
-    assert sink.calls[0] == ("submit_task", False)
+    assert sink.calls[0][0] == "find_open_task_for_identifier"
+    assert sink.calls[1] == ("submit_task", False)
 
 
 # ---------------------------------------------------------------------------
