@@ -99,12 +99,18 @@ committed — confirmed via `git check-ignore` and `git log` search):
 - `SARVAM_API_KEY` — **verified working** (TTS + STT round-trip).
 - `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` — **verified
   working** (reached the real LiveKit Cloud project, listed 0 rooms).
-- `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` — **the pair I currently have
-  returns 401 "account ... is not active"** even for basic account
-  lookup. This looks like the Auth Token rotated when the account was
-  activated. **Needs a fresh SID + Auth Token from the Twilio console,
-  plus a `TWILIO_FROM_NUMBER`** (the trial account's assigned number) —
-  nothing can be verified live until these arrive.
+- `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` — present, confirmed matching
+  the Twilio console exactly (via screenshot), **but every API call
+  including basic account lookup returns 401 "account ... is not
+  active"** (Twilio error 20003). Not a credentials problem — the
+  console shows the account as active and trial, so this is a Twilio-
+  side account state that hasn't resolved yet. `TWILIO_FROM_NUMBER` IS
+  set (`+19897877862`, the trial account's assigned number). The code
+  path is built, tested against mocks, and was run end-to-end against
+  these live (if currently rejected) credentials — it resolved cleanly
+  to `EMERGENCY_CALL_FAILED` rather than crashing. Nothing further to
+  build here; re-run against the same credentials once Twilio resolves
+  whatever is blocking the account.
 
 ## 4. Known deprecations found and fixed (don't reintroduce these)
 
