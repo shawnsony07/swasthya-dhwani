@@ -179,6 +179,7 @@ async def test_message_is_escaped_into_twiml_say_verb(respx_mock):
     await provider.call("+919037820802", 'Patient & caregiver say "help" <now>')
 
     sent_body = create_route.calls.last.request.content.decode()
-    assert "&amp;" in sent_body
-    assert "&lt;now&gt;" in sent_body
-    assert "&quot;help&quot;" in sent_body
+    twiml = parse_qs(sent_body)["Twiml"][0]
+    assert "&amp;" in twiml
+    assert "&lt;now&gt;" in twiml
+    assert "&quot;help&quot;" in twiml
