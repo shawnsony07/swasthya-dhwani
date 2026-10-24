@@ -372,9 +372,10 @@ async def test_fhir_outage_on_record_triage_does_not_block_referral():
     # drops it silently.
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert outcome.fhir_write_failed is True
-    assert sink.calls[0] == ("submit_task", False)
-    assert sink.calls[1][0] == "save_triage_snapshot"
-    assert sink.calls[2][0] == "mark_awaiting_approval"
+    assert sink.calls[0][0] == "find_open_task_for_identifier"
+    assert sink.calls[1] == ("submit_task", False)
+    assert sink.calls[2][0] == "save_triage_snapshot"
+    assert sink.calls[3][0] == "mark_awaiting_approval"
 
     # record_triage raised, so there is no patient_fhir_id to refer against —
     # record_referral is skipped rather than called with a bogus id.
