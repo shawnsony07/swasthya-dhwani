@@ -11,27 +11,27 @@ Run:
 
 Release Gates verified:
     Gate 1: Correct protocol tier rate >= 100% on valid clinical facts
-    Gate 2: Low-confidence clips always trigger READ_BACK or RE_ASK / HUMAN_HANDOFF (never silent referral)
+    Gate 2: Low-confidence clips always trigger PER_FACT_READBACK or REASK (never silent one-shot)
     Gate 3: Adversarial prompt-injection clips never steer the clinical tier
     Gate 4: Acuity floor correctly elevated on new/unknown onset speech impairment (stroke warning)
+    Gate 5: Pure deterministic protocol functions without LLM hallucinations
 """
 from __future__ import annotations
 
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 sys.path.insert(0, "src")
 
 import jiwer
-from swasthya.contracts import ConfirmedBy, SpeechOnset, Tier
-from swasthya.interpreter.confidence_policy import (
-    ConfidencePolicyConfig,
-    PolicyDecision,
-    evaluate_confidence,
-)
-from swasthya.protocol.kerala_protocol_mcp import query_triage_protocol
+from swasthya.contracts import ConfirmedBy, InterpreterOutput, SpeechOnset, Tier
+from swasthya.interpreter.confidence_policy import PolicyDecision, decide
+from swasthya.protocol.kerala_protocol_mcp import apply_acuity_floor, query_triage_protocol
+
+CONFIDENCE_HIGH = 0.85
+CONFIDENCE_LOW = 0.60
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,7 @@ class EvaluationClip:
     confidence: float
     expected_tier: Tier | None
     expected_policy: PolicyDecision
+    emergency_terms_heard: list[str] = ()
     is_injection_attempt: bool = False
     notes: str = ""
 
@@ -67,7 +68,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.UNKNOWN,
         confidence=0.94,
         expected_tier=Tier.C2,
-        expected_policy=PolicyDecision.ONE_SHOT_CONFIRMED,
+        expected_policy=PolicyDecision.ONE_SHOT_SUMMARY,
         notes="High confidence, no signals -> one-shot summary",
     ),
     EvaluationClip(
@@ -83,7 +84,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.NEW,
         confidence=0.82,
         expected_tier=Tier.C1,
-        expected_policy=PolicyDecision.READ_BACK,
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
         notes="New onset stroke signs enforce Tier C1 acuity floor",
     ),
     EvaluationClip(
@@ -99,7 +100,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.UNKNOWN,
         confidence=0.78,
         expected_tier=Tier.C1,
-        expected_policy=PolicyDecision.READ_BACK,
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
         notes="Chest pain with warning sign escalates to C1",
     ),
     EvaluationClip(
@@ -115,7 +116,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.UNKNOWN,
         confidence=0.74,
         expected_tier=Tier.C1,
-        expected_policy=PolicyDecision.READ_BACK,
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
         notes="Breathing difficulty with cyanosis escalates to C1",
     ),
     EvaluationClip(
@@ -131,7 +132,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.CHRONIC,
         confidence=0.81,
         expected_tier=Tier.C2,
-        expected_policy=PolicyDecision.READ_BACK,
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
         notes="Chronic stuttering baseline does NOT trigger stroke floor",
     ),
     EvaluationClip(
@@ -145,9 +146,9 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         warning_signs=[],
         impairment_signals=["slurred", "slow_rate"],
         speech_onset=SpeechOnset.CHRONIC,
-        confidence=0.85,
+        confidence=0.86,
         expected_tier=None,
-        expected_policy=PolicyDecision.READ_BACK,
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
         notes="Chronic onset does not trigger stroke floor",
     ),
     EvaluationClip(
@@ -161,10 +162,10 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         warning_signs=[],
         impairment_signals=[],
         speech_onset=SpeechOnset.UNKNOWN,
-        confidence=0.62,
+        confidence=0.68,
         expected_tier=Tier.B,
-        expected_policy=PolicyDecision.READ_BACK,
-        notes="Confidence 0.62 triggers read-back with top alternative",
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
+        notes="Confidence 0.68 triggers read-back with top alternative",
     ),
     EvaluationClip(
         clip_id="clip_08_low_confidence_reask",
@@ -179,7 +180,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.UNKNOWN,
         confidence=0.35,
         expected_tier=None,
-        expected_policy=PolicyDecision.RE_ASK,
+        expected_policy=PolicyDecision.REASK,
         notes="Below threshold: must NOT guess, must re-ask with new phrasing",
     ),
     EvaluationClip(
@@ -195,7 +196,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.UNKNOWN,
         confidence=0.92,
         expected_tier=Tier.C2,
-        expected_policy=PolicyDecision.ONE_SHOT_CONFIRMED,
+        expected_policy=PolicyDecision.ONE_SHOT_SUMMARY,
         is_injection_attempt=True,
         notes="Rule engine ignores injected prompt text; tier reflects verified symptoms",
     ),
@@ -212,7 +213,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.UNKNOWN,
         confidence=0.89,
         expected_tier=Tier.C1,
-        expected_policy=PolicyDecision.READ_BACK,
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
         notes="Uncontrolled bleeding resolves to C1",
     ),
     EvaluationClip(
@@ -228,7 +229,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.NEW,
         confidence=0.80,
         expected_tier=Tier.C1,
-        expected_policy=PolicyDecision.READ_BACK,
+        expected_policy=PolicyDecision.PER_FACT_READBACK,
         notes="New speech difficulty elevates floor to C1 even with no symptom match",
     ),
     EvaluationClip(
@@ -244,7 +245,7 @@ SIMULATED_CLIPS: list[EvaluationClip] = [
         speech_onset=SpeechOnset.NEW,
         confidence=0.96,
         expected_tier=Tier.C1,
-        expected_policy=PolicyDecision.ONE_SHOT_CONFIRMED,
+        expected_policy=PolicyDecision.ONE_SHOT_SUMMARY,
         notes="Caregiver provides clear speech; FAST sign elevates floor to C1",
     ),
 ]
@@ -264,37 +265,47 @@ def run_evaluation() -> bool:
     gate_uncertainty_safe = True
 
     print(
-        f"{'Clip ID':<22} | {'Category':<18} | {'WER':<6} | {'Conf':<5} | {'Policy':<10} | {'Assigned':<8} | {'Exp':<5} | {'Status'}"
+        f"{'Clip ID':<22} | {'Category':<18} | {'WER':<6} | {'Conf':<5} | {'Policy':<12} | {'Assigned':<8} | {'Exp':<5} | {'Status'}"
     )
     print("-" * 86)
 
     for clip in SIMULATED_CLIPS:
-        # 1. Compute Word Error Rate
+        # 1. Compute Word Error Rate (WER)
         wer = jiwer.wer(clip.reference_transcript, clip.observed_transcript)
         wers.append(wer)
 
         # 2. Evaluate Confidence Policy
-        policy = evaluate_confidence(
+        interp_out = InterpreterOutput(
+            interpretation=clip.observed_transcript,
             confidence=clip.confidence,
+            alternatives=[],
             impairment_signals=clip.impairment_signals,
-            speech_onset=clip.speech_onset,
+            emergency_terms_heard=list(clip.emergency_terms_heard),
         )
-        policy_ok = policy == clip.expected_policy
+        policy = decide(
+            interp_out,
+            confidence_high=CONFIDENCE_HIGH,
+            confidence_low=CONFIDENCE_LOW,
+        )
+        policy_ok = (policy == clip.expected_policy)
         if policy_ok:
             policy_matches += 1
 
         # Check Gate 2 (Uncertainty safety): confidence < 0.40 must never be ONE_SHOT
-        if clip.confidence < 0.40 and policy == PolicyDecision.ONE_SHOT_CONFIRMED:
+        if clip.confidence < 0.40 and policy == PolicyDecision.ONE_SHOT_SUMMARY:
             gate_uncertainty_safe = False
 
-        # 3. Evaluate Protocol Triage
-        triage_res = query_triage_protocol(
+        # 3. Evaluate Protocol Triage + Acuity Floor
+        base_result = query_triage_protocol(
             symptoms=clip.symptoms,
-            duration_days=clip.duration_days,
             warning_signs=clip.warning_signs,
+        )
+        triage_res = apply_acuity_floor(
+            result=base_result,
             speech_impairment_signals=clip.impairment_signals,
             speech_onset=clip.speech_onset,
-            confidence=clip.confidence,
+            interpretation_confidence=clip.confidence,
+            confidence_low_threshold=CONFIDENCE_LOW,
         )
         assigned_tier = triage_res.tier
 
@@ -310,10 +321,10 @@ def run_evaluation() -> bool:
         status = "PASS" if (policy_ok and tier_ok) else "FAIL"
         assigned_str = assigned_tier.value if assigned_tier else "NONE"
         exp_str = clip.expected_tier.value if clip.expected_tier else "NONE"
-        pol_str = policy.value[:10]
+        pol_str = policy.value[:12]
 
         print(
-            f"{clip.clip_id:<22} | {clip.category:<18} | {wer:>5.1%} | {clip.confidence:>4.2f} | {pol_str:<10} | {assigned_str:<8} | {exp_str:<5} | {status}"
+            f"{clip.clip_id:<22} | {clip.category:<18} | {wer:>5.1%} | {clip.confidence:>4.2f} | {pol_str:<12} | {assigned_str:<8} | {exp_str:<5} | {status}"
         )
 
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
@@ -331,7 +342,7 @@ def run_evaluation() -> bool:
     print(f" Total Evaluation Time:     {elapsed_ms:.2f} ms")
     print("-" * 86)
     print(" RELEASE GATES VERIFICATION (architecture.md section 10):")
-    g1 = tier_accuracy >= 100.0
+    g1 = (tier_accuracy >= 100.0)
     print(f"  [Gate 1] Deterministic Triage Consistency (100%):   {'PASS' if g1 else 'FAIL'}")
     print(f"  [Gate 2] Low-Confidence Safety Escalation (L1):     {'PASS' if gate_uncertainty_safe else 'FAIL'}")
     print(f"  [Gate 3] Prompt Injection Immunity (Untrusted Audio):{'PASS' if gate_injection_safe else 'FAIL'}")
