@@ -386,3 +386,52 @@ You're setting up Docker Compose for a healthcare triage repo at `C:\dev\fluent_
 Report back: files created, the exact HAPI/Keycloak image tags you pinned and why, confirmed boot status for postgres/hapi/keycloak (with actual command output, not assumed), whether api/dashboard existed and built successfully at the time you checked, and the browser-vs-server-side Keycloak URL distinction you implemented for the dashboard's env vars.
 
 ----------------------------------------------------------------------
+
+----------------------------------------------------------------------
+[11] Dispatched 2026-10-25 00:33:20 IST
+Task: Build Next.js doctor dashboard (retry — entry [9] failed on the
+      session rate limit almost immediately, only create-next-app
+      scaffolding existed on disk, no dashboard code)
+----------------------------------------------------------------------
+You're building a Next.js app in the repo at `C:\dev\fluent_swasthya` (local git repo — do NOT push; a remote exists but pushing is the user's job, not yours). Node 22 and npm 11 are available.
+
+**Current state of `dashboard/`:** a bare, untouched `create-next-app` scaffold (Next.js 16.4.3, React 19.3.0, TypeScript, Tailwind 4) — `src/app/layout.tsx`, `src/app/page.tsx`, `src/app/globals.css`, default content, nothing dashboard-specific built yet. A previous attempt at this task failed almost immediately (hit a rate limit) before writing anything beyond the scaffold, so you are starting fresh, not resuming.
+
+Read `docs/architecture.md` sections 12 ("UX and accessibility") and 9 (S3 — role gating), then read `docs/api_contract.md` in full — that is the exact, authoritative contract for the backend API you're calling. **The backend is now fully built and verified working** at `src/swasthya/api/` (FastAPI, implements every endpoint in that contract) — you are only building the frontend, not touching Python code.
+
+**Live infrastructure you can actually test against** (already running in Docker on this machine, verified minutes ago):
+- Keycloak at `http://localhost:8081`, realm `swasthya`, OIDC issuer `http://localhost:8081/realms/swasthya`. Client `swasthya-dashboard` (public, `directAccessGrantsEnabled`, redirect URI `http://localhost:3000/*`). Three real seeded users you can log in as: `doctor1`/`doctor1pass` (role `doctor`), `nurse1`/`nurse1pass` (role `nurse`), `admin1`/`admin1pass` (roles `admin`+`doctor`). This was just verified end-to-end: a real password-grant token for `doctor1` decodes to `{"realm_access": {"roles": ["doctor"]}}`.
+- The FastAPI backend is NOT currently running as a long-lived process, but you can start it yourself for testing: `DATABASE_URL="sqlite:///:memory:" KEYCLOAK_BASE_URL="http://localhost:8081" python -m uvicorn swasthya.api.app:app --app-dir ../src --port 8000` from the `dashboard/` directory (adjust `--app-dir` to the repo's `src/`). It was just verified working: `GET /healthz` → 200, `GET /tasks` without a token → 401, `GET /tasks` with a real `doctor1` bearer token → 200. In-memory SQLite means no seed data persists across restarts — you'll need to seed a task via the API or accept an empty list for visual testing, your call.
+- **Auth decided (not a TODO):** `GET /alerts/stream` accepts the token either as a normal `Authorization` header OR as a `?token=<jwt>` query parameter — the dashboard MUST use the query-param form since the browser's native `EventSource` cannot set headers. Connect as `new EventSource(\`${API_BASE}/alerts/stream?token=${jwt}\`)`.
+
+**Scope** (the doctor-facing alert/approve/reject flow; nurse enrollment is explicitly out of scope for this pass):
+
+1. **Auth**: NextAuth.js (Auth.js) v5 with the Keycloak OIDC provider, issuer `http://localhost:8081/realms/swasthya` (env var `KEYCLOAK_BASE_URL`, default that), client id `swasthya-dashboard`, no client secret needed (public client). Attach the session's access token as `Authorization: Bearer <token>` on every call to the FastAPI backend at `NEXT_PUBLIC_API_BASE_URL` (env var, default `http://localhost:8000`). You have a REAL Keycloak to test this against end-to-end — actually run the login flow in a browser or via a scripted OAuth round-trip and confirm it works; don't just write code you believe is correct.
+
+2. **`/login`**: NextAuth's Keycloak sign-in redirect is fine, no custom-styled form needed. Unauthenticated users should land here.
+
+3. **`/dashboard`** (main alert list, any authenticated role):
+   - Fetches `GET /tasks` on load. Renders each task: tier, hospital, `is_time_critical` (visually louder — pair color with an icon/label like "TIME-CRITICAL", never color alone per the doc's accessibility rule), state (distinct label/color per state; `auto_escalated`/`human_handoff` louder than `awaiting_approval`/`approved`), `updated_at` as relative time.
+   - Opens `GET /alerts/stream` via `EventSource` with the `?token=` query param (see above — this is settled, not an assumption to flag). Live-updates the list on events; re-fetches `GET /tasks` on connect/reconnect to catch up (SSE never replays missed events, per the contract).
+   - Filter tabs: "Needs approval" (`awaiting_approval` + `auto_escalated` + `human_handoff`) and "All".
+   - Keyboard-operable, visible `:focus-visible` styles, semantic HTML (`<button>` not `<div onClick>`), large touch targets.
+
+4. **`/dashboard/[taskId]`**:
+   - Fetches `GET /tasks/{id}`. Renders the raw-vs-interpreted-vs-confidence panel (architecture.md section 12): raw transcript and interpreted text paired/side-by-side, confidence as both a number and a visual indicator, impairment signals as tags, speech onset, confirmed_by. Label interpreted content "machine-interpreted" (the doc's honesty-cues requirement). `triage_snapshot: null` → "No snapshot available", never a crash or blank page.
+   - Role `doctor` in session → show Approve/Reject buttons. Reject requires a non-empty reason field before submit (the API 422s on an empty one — surface that). `actor` comes from the session username, never a free-text field. On success, show the new state. On a 409 (illegal transition, e.g. already approved by someone else), show that error clearly.
+   - No `doctor` role → same detail, read-only, no action buttons (the API also enforces this server-side; this is defense in depth).
+
+5. A persistent footer/banner: "Synthetic/demo data" (architecture.md's privacy-honesty requirement — this is a hackathon demo, not a real clinical tool).
+
+6. Minimal Malayalam/English i18n (next-intl or a small custom setup) on the highest-visibility labels: nav, state names, tier names, approve/reject button text. Full coverage isn't required; note what's left untranslated in your report.
+
+Write industry-grade frontend code: TypeScript strict mode, loading/error states on every fetch (no silent blank screens), accessible components, Tailwind for styling. Add/update `dashboard/README.md` with setup instructions and every env var you introduce.
+
+**Verification — actually perform this, you have real infrastructure to test against:**
+1. `npm install`, `npm run build` (catches type errors), `npm run dev`.
+2. Start the FastAPI backend yourself (command above) so there's something real to talk to.
+3. Actually exercise the login flow against the live Keycloak — sign in as `doctor1`, confirm you land on `/dashboard` with a valid session, confirm the role shows up correctly (approve/reject buttons visible). Try `nurse1` too and confirm no approve/reject buttons appear.
+4. Seed at least one task into the running API (either by POSTing through some test script against `weft_workflow` directly in a Python one-liner, or by hitting the API if there's a way — your call) and confirm it renders on `/dashboard` and its detail page renders the snapshot panel correctly.
+5. Stop the FastAPI backend you started when you're done (don't leave it running) — but you MAY leave Keycloak/Postgres/HAPI running in Docker, those are shared infrastructure for this session, not yours to tear down.
+
+Report back: files created, what you verified for real (quote actual command output, not assumptions), what if anything didn't work and why, and confirm dev server + build both succeed cleanly.
