@@ -369,6 +369,9 @@ async def entrypoint(ctx: JobContext) -> None:
         rule_engine=_RuleEngineAdapter(),
         workflow=workflow_sink,
         fhir=_FhirSinkAdapter(),
+        emergency=_EmergencyDispatcherAdapter(),
+    )
+
     async def _disconnect_room() -> None:
         try:
             logger.info("voice.room_disconnecting", room=ctx.room.name)
