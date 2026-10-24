@@ -1,0 +1,52 @@
+{
+  "realm": "swasthya",
+  "enabled": true,
+  "registrationAllowed": false,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      { "name": "doctor", "description": "Can approve/reject triage referrals" },
+      { "name": "nurse", "description": "Can view cases, enroll patients (future)" },
+      { "name": "admin", "description": "Full dashboard access, kill switch control" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "swasthya-dashboard",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3000"],
+      "defaultClientScopes": ["profile", "email", "roles"]
+    }
+  ],
+  "users": [
+    {
+      "username": "doctor1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "doctor1@example.swasthya.local",
+      "credentials": [{ "type": "password", "value": "doctor1pass", "temporary": false }],
+      "realmRoles": ["doctor"]
+    },
+    {
+      "username": "nurse1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "nurse1@example.swasthya.local",
+      "credentials": [{ "type": "password", "value": "nurse1pass", "temporary": false }],
+      "realmRoles": ["nurse"]
+    },
+    {
+      "username": "admin1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin1@example.swasthya.local",
+      "credentials": [{ "type": "password", "value": "admin1pass", "temporary": false }],
+      "realmRoles": ["admin", "doctor"]
+    }
+  ]
+}

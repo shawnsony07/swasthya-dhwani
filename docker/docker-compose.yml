@@ -1,0 +1,133 @@
+name: swasthya
+
+# Local demo stack per docs/architecture.md section 2 and section 11.
+# Intentionally OUT OF SCOPE for this compose file (see docker/README.md):
+#   - fhir-seeder (explicitly out of scope for this task)
+#   - voice-agent (needs live LiveKit room credentials this environment
+#     does not have; see docker/README.md for how to add it later)
+#
+# Run from the repo root:
+#   docker compose -f docker/docker-compose.yml up --build
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-swasthya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-swasthya}
+      POSTGRES_DB: ${POSTGRES_DB:-swasthya}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-swasthya} -d ${POSTGRES_DB:-swasthya}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Pinned to v7.2.0 (architecture.md section 2 flags ":latest" as a
+  # problem to fix). Built-in H2 is fine for the demo per the same doc;
+  # Postgres for HAPI is a pilot-stage change, not needed here.
+  hapi:
+    image: hapiproject/hapi:v7.2.0
+    restart: unless-stopped
+    environment:
+      # Keep the demo on the image's bundled H2 database (no external
+      # Postgres wiring for HAPI in this compose file).
+      hapi.fhir.default_encoding: json
+    ports:
+      - "8080:8080"
+    volumes:
+      - hapi-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/fhir/metadata || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  # Dev mode only. admin/admin is a local-demo-only default -- change
+  # KEYCLOAK_ADMIN_PASSWORD before this stack runs anywhere but a laptop.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak/swasthya-realm.json:/opt/keycloak/data/import/swasthya-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hapi:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      # Container-to-container: the api talks to postgres/hapi by service
+      # name on the compose network, not localhost.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://swasthya:swasthya@postgres:5432/swasthya}
+      HAPI_FHIR_BASE_URL: ${HAPI_FHIR_BASE_URL:-http://hapi:8080/fhir}
+      # Server-to-server: inside the compose network keycloak listens on
+      # its container-internal port 8080, NOT the host-mapped 8081.
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: ../docker/dashboard.Dockerfile
+      args:
+        # Browser-facing: must be the host-mapped URL, not the compose
+        # service name, since this runs in the user's browser, not a
+        # container on the compose network.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - keycloak
+    environment:
+      # Browser-facing URLs (must use the host-mapped port/hostname --
+      # these are fetched directly by the user's browser, not server-to-server).
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      # Server-to-server (NextAuth's server-side OIDC calls happen inside
+      # the dashboard container, so they must use the compose service name
+      # and keycloak's container-internal port 8080 -- NOT "localhost" and
+      # NOT the host-mapped 8081, which only exists outside the compose
+      # network).
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set in .env}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:
+  hapi-data:
