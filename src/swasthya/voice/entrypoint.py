@@ -389,6 +389,23 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     workflow_sink = _WorkflowSinkAdapter(_get_session_factory())
+    workflow_sink.call_metrics = CallMetricsCollector(
+        room=ctx.room.name,
+        channel="sip" if str(ctx.room.name).startswith("sip-") else "web",
+        language="ml-IN",
+        stt_model="sarvam",
+        tts_model=os.environ.get("SARVAM_TTS_MODEL", "bulbul:v3"),
+        tts_voice=os.environ.get("SARVAM_TTS_VOICE", "priya"),
+        llm_model=os.environ.get("GEMINI_MODEL", "gemini-flash-latest"),
+    )
+
+    def _on_metrics(ev: object) -> None:
+        try:
+            workflow_sink.call_metrics.ingest_livekit_metric(getattr(ev, "metrics", ev))  # type: ignore[union-attr]
+        except Exception as exc:  # noqa: BLE001 - telemetry must never break a call
+            logger.warning("voice.call_metrics_ingest_failed", error=str(exc))
+
+    session.on("metrics_collected", _on_metrics)
     ctx.add_shutdown_callback(_close_workflow_sink(workflow_sink))
 
     orchestrator = ConversationOrchestrator(
@@ -413,6 +430,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
 def _close_workflow_sink(workflow_sink: _WorkflowSinkAdapter) -> Callable[[], Coroutine[None, None, None]]:
     async def _callback() -> None:
+        workflow_sink.finalize_call_metrics()
         workflow_sink.close()
 
     return _callback
