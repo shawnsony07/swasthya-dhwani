@@ -17,6 +17,9 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from swasthya.api.auth import require_role
@@ -25,13 +28,16 @@ from swasthya.api.schemas import (
     DisableKillSwitchRequest,
     EngageKillSwitchRequest,
     KillSwitchStatus,
+    PurgeRetentionRequest,
+    PurgeRetentionResponse,
     RosterEntry,
     RosterEntryCreate,
     RosterEntryUpdate,
 )
 from swasthya.db.kill_switch_store import DbKillSwitchStore
-from swasthya.db.models import OnCallRosterEntry
+from swasthya.db.models import AuditEventRow, OnCallRosterEntry, Task
 from swasthya.gateway.kill_switch import KillSwitch
+from swasthya.workflow.weft_workflow import purge_retention
 
 logger = structlog.get_logger(__name__)
 
