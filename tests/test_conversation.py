@@ -321,9 +321,10 @@ async def test_full_happy_path_calls_rule_engine_and_workflow_in_order_and_retur
 
     assert len(engine.query_calls) == 1
     assert len(engine.floor_calls) == 1
-    assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1][0] == "save_triage_snapshot"
-    assert sink.calls[2] == ("mark_awaiting_approval", "task-happy", Tier.B, "taluk")
+    assert sink.calls[0] == ("find_open_task_for_identifier", "9876543210")
+    assert sink.calls[1][0] == "submit_task"
+    assert sink.calls[2][0] == "save_triage_snapshot"
+    assert sink.calls[3] == ("mark_awaiting_approval", "task-happy", Tier.B, "taluk")
 
     # FHIR writes happen, in order, before the workflow sink is touched.
     assert [call[0] for call in fhir.calls] == ["record_triage", "record_referral"]
@@ -343,9 +344,10 @@ async def test_no_match_still_records_triage_but_never_calls_record_referral():
     assert outcome.kind == ConversationOutcomeKind.HUMAN_HANDOFF
     assert outcome.task_id == "task-nomatch"
     assert outcome.fhir_write_failed is False
-    assert sink.calls[0] == ("submit_task", False)
-    assert sink.calls[1][0] == "save_triage_snapshot"
-    assert sink.calls[2] == (
+    assert sink.calls[0][0] == "find_open_task_for_identifier"
+    assert sink.calls[1] == ("submit_task", False)
+    assert sink.calls[2][0] == "save_triage_snapshot"
+    assert sink.calls[3] == (
         "mark_human_handoff",
         "task-nomatch",
         "unrecognised symptom combination",
