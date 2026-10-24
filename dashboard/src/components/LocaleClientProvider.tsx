@@ -11,6 +11,12 @@ export default function LocaleClientProvider({
   const [locale, setLocaleState] = useState<Locale>("en");
 
   useEffect(() => {
+    // One-time hydration correction, not a cascading-render risk: the
+    // server has no localStorage, so the initial render must default to
+    // "en" to avoid a hydration mismatch, and the real value can only be
+    // read after mount. This sets state at most once per mount, never in
+    // response to a changing dependency.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     try {
       const stored = window.localStorage.getItem("swasthya.locale");
       if (stored === "en" || stored === "ml") setLocaleState(stored);
