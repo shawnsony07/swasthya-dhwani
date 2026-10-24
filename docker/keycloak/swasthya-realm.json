@@ -29,6 +29,8 @@
       "enabled": true,
       "emailVerified": true,
       "email": "doctor1@example.swasthya.local",
+      "firstName": "Demo",
+      "lastName": "Doctor",
       "credentials": [{ "type": "password", "value": "doctor1pass", "temporary": false }],
       "realmRoles": ["doctor"]
     },
@@ -37,6 +39,8 @@
       "enabled": true,
       "emailVerified": true,
       "email": "nurse1@example.swasthya.local",
+      "firstName": "Demo",
+      "lastName": "Nurse",
       "credentials": [{ "type": "password", "value": "nurse1pass", "temporary": false }],
       "realmRoles": ["nurse"]
     },
@@ -45,6 +49,8 @@
       "enabled": true,
       "emailVerified": true,
       "email": "admin1@example.swasthya.local",
+      "firstName": "Demo",
+      "lastName": "Admin",
       "credentials": [{ "type": "password", "value": "admin1pass", "temporary": false }],
       "realmRoles": ["admin", "doctor"]
     }
