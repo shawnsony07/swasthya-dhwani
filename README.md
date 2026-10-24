@@ -39,12 +39,19 @@ filling is a fixed order (identifier → symptoms → warning signs → duration
 for this pass, not full NLU extraction from free dialogue — flagged as a
 known simplification, not hidden.
 
-**Known gap, flagged not hidden:** `entrypoint.py`'s `_WorkflowSinkAdapter`
-has no real database session wired in yet (`weft_workflow` needs a SQLAlchemy
-`Session`); `submit_task` raises clearly if called unconfigured, and
-`mark_awaiting_approval`/`mark_human_handoff` raise `NotImplementedError`.
-Wiring a request/call-scoped session is the next step before this can run
-against a live room end-to-end.
+**End-to-end wiring:** `entrypoint.py`'s `_WorkflowSinkAdapter` now opens a
+real SQLAlchemy `Session` per call (`src/swasthya/db/session.py`) and drives
+the actual `weft_workflow` state machine; `_FhirSinkAdapter` calls the real
+`swasthya.fhir.adapter` functions. A FHIR outage is caught at the
+`ConversationOrchestrator` boundary and degrades the call
+(`fhir_write_failed=True` on the outcome) rather than blocking it — see
+`docs/architecture.md` section 8. `simulate_e2e.py` (repo root) proves the
+real rule engine + real workflow + real DB agree, end to end, without needing
+live LiveKit/Gemini/Sarvam/HAPI credentials — run it with `python
+simulate_e2e.py`. It's honest about what it does *not* cover (printed at the
+end of its own output): the live interpreter, a live LiveKit room, a real
+HAPI server, and the action gateway (Twilio/SmartThings/voice clone aren't
+wired to `conversation.py`'s emergency signal yet).
 
 **Voice cloning note:** Sarvam (the chosen Malayalam TTS vendor) has no voice
 cloning — only fixed voices. `gateway/providers/base.py` defines a
@@ -61,19 +68,21 @@ pytest tests/ -v
 ruff check src tests
 mypy src --ignore-missing-imports
 python -m swasthya.protocol.ingest_protocol --check   # fails if graph.json is stale
+python simulate_e2e.py                                 # end-to-end replay harness
 ```
 
-92 tests, all passing as of this build.
+103 tests, all passing as of this build; `simulate_e2e.py` passes 9/9 scenarios.
 
 ## Not done yet (see `docs/architecture.md` section 15 for the full tiering)
 
-- A live database session wired into the voice agent's workflow sink (see
-  "Known gap" above) — needed before a real call can run end-to-end
 - Dashboard (Next.js UI)
-- Live Twilio / SmartThings integrations (gateway providers are stubs today)
+- Live Twilio / SmartThings integrations and wiring the action gateway to
+  `conversation.py`'s `SAY_EMERGENCY_WINDOW` signal (gateway providers exist
+  and are tested in isolation, but nothing calls them from a real emergency
+  yet)
 - Docker Compose stack, Keycloak wiring, CI secret rotation runbook execution
-- `simulate_e2e.py` replay-mode harness to exercise the voice agent without a
-  live LiveKit room/credentials
+- A real HAPI FHIR server to run against (the adapter is tested against
+  mocked HTTP; `simulate_e2e.py` uses a recording fake, not a live server)
 - Clinical sign-off on the stroke symptom list and tier values in
   `src/swasthya/protocol/disease_triage_matrix.json` — flagged inline, not
   yet reviewed by a clinician

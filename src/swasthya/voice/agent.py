@@ -120,7 +120,7 @@ class MalayalamTriageAgent(Agent):
         audio_clip = self._audio_buffer.snapshot_and_clear()
 
         if not transcript.strip() and not audio_clip:
-            outcome = self._orchestrator.handle_silence_or_disconnect(self._state)
+            outcome = await self._orchestrator.handle_silence_or_disconnect(self._state)
             await self._apply_outcome(outcome)
             raise StopResponse
 
@@ -133,7 +133,7 @@ class MalayalamTriageAgent(Agent):
             )
         except InterpretationFailed:
             logger.warning("voice.interpretation_failed")
-            outcome = self._orchestrator.handle_interpreted_fact(
+            outcome = await self._orchestrator.handle_interpreted_fact(
                 self._state,
                 fact=self._pending_fact_for_slot(
                     transcript=transcript, confidence=0.0, impairment_signals=[]
@@ -156,7 +156,7 @@ class MalayalamTriageAgent(Agent):
             alternatives=interpreted.alternatives,
             raw_transcript=transcript,
         )
-        outcome = self._orchestrator.handle_interpreted_fact(self._state, fact, decision)
+        outcome = await self._orchestrator.handle_interpreted_fact(self._state, fact, decision)
         await self._apply_outcome(outcome)
 
         if outcome.kind is not ConversationOutcomeKind.CONTINUE_GATHERING:

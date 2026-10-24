@@ -67,6 +67,34 @@ class FakeWorkflowSink:
         self.calls.append(("mark_human_handoff", task_id, reason))
 
 
+@dataclass
+class FakeFhirSink:
+    """In-memory fake satisfying `conversation_contracts.FhirSink`.
+
+    `record_triage_exception`/`record_referral_exception`, when set, are
+    raised instead of returning — used to exercise the orchestrator's
+    best-effort FHIR resilience path.
+    """
+
+    next_patient_fhir_id: str = "patient-fhir-1"
+    next_service_request_id: str = "service-request-1"
+    record_triage_exception: Exception | None = None
+    record_referral_exception: Exception | None = None
+    calls: list[tuple] = field(default_factory=list)
+
+    async def record_triage(self, triage) -> str:
+        self.calls.append(("record_triage", triage))
+        if self.record_triage_exception is not None:
+            raise self.record_triage_exception
+        return self.next_patient_fhir_id
+
+    async def record_referral(self, patient_fhir_id: str, tier, hospital) -> str:
+        self.calls.append(("record_referral", patient_fhir_id, tier, hospital))
+        if self.record_referral_exception is not None:
+            raise self.record_referral_exception
+        return self.next_service_request_id
+
+
 def make_fact(
     key: FactKey,
     value: str = "fever",
@@ -106,7 +134,8 @@ def no_match_result(reason="nothing matched"):
 def orchestrator():
     engine = FakeRuleEngine(query_result=matched_result())
     sink = FakeWorkflowSink()
-    return ConversationOrchestrator(engine, sink), engine, sink
+    fhir = FakeFhirSink()
+    return ConversationOrchestrator(engine, sink, fhir), engine, sink, fhir
 
 
 # ---------------------------------------------------------------------------
@@ -114,19 +143,19 @@ def orchestrator():
 # ---------------------------------------------------------------------------
 
 
-def test_one_shot_summary_for_clean_high_confidence_fact(orchestrator):
-    orch, _, _ = orchestrator
+async def test_one_shot_summary_for_clean_high_confidence_fact(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(FactKey.SYMPTOMS, value="fever, cough", confidence=0.97)
 
-    outcome = orch.handle_interpreted_fact(state, fact, PolicyDecision.ONE_SHOT_SUMMARY)
+    outcome = await orch.handle_interpreted_fact(state, fact, PolicyDecision.ONE_SHOT_SUMMARY)
 
     assert outcome.kind == ConversationOutcomeKind.SAY_ONE_SHOT_SUMMARY
     assert state.confirmed_facts[FactKey.SYMPTOMS] is fact
 
 
-def test_per_fact_readback_for_impaired_or_mid_confidence_fact(orchestrator):
-    orch, _, _ = orchestrator
+async def test_per_fact_readback_for_impaired_or_mid_confidence_fact(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(
         FactKey.SYMPTOMS,
@@ -136,7 +165,7 @@ def test_per_fact_readback_for_impaired_or_mid_confidence_fact(orchestrator):
         impairment_signals=["slurred"],
     )
 
-    outcome = orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
+    outcome = await orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
 
     assert outcome.kind == ConversationOutcomeKind.SAY_PER_FACT_READBACK
     assert "chest pain" in outcome.speak_text
@@ -145,24 +174,24 @@ def test_per_fact_readback_for_impaired_or_mid_confidence_fact(orchestrator):
     assert FactKey.SYMPTOMS not in state.confirmed_facts
 
 
-def test_reask_increments_failure_counter(orchestrator):
-    orch, _, _ = orchestrator
+async def test_reask_increments_failure_counter(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(FactKey.SYMPTOMS, confidence=0.1)
 
-    outcome = orch.handle_interpreted_fact(state, fact, PolicyDecision.REASK)
+    outcome = await orch.handle_interpreted_fact(state, fact, PolicyDecision.REASK)
 
     assert outcome.kind == ConversationOutcomeKind.SAY_REASK
     assert state.readback_failure_counts[FactKey.SYMPTOMS] == 1
 
 
-def test_third_reask_attempt_triggers_human_handoff_never_third_reask(orchestrator):
-    orch, _, _ = orchestrator
+async def test_third_reask_attempt_triggers_human_handoff_never_third_reask(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(FactKey.SYMPTOMS, confidence=0.1)
 
     outcomes = [
-        orch.handle_interpreted_fact(state, fact, PolicyDecision.REASK)
+        await orch.handle_interpreted_fact(state, fact, PolicyDecision.REASK)
         for _ in range(MAX_READBACK_FAILURES + 1)
     ]
 
@@ -175,12 +204,12 @@ def test_third_reask_attempt_triggers_human_handoff_never_third_reask(orchestrat
     assert outcomes[-1].kind != ConversationOutcomeKind.SAY_REASK
 
 
-def test_emergency_skip_decision_is_rejected(orchestrator):
-    orch, _, _ = orchestrator
+async def test_emergency_skip_decision_is_rejected(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(FactKey.SYMPTOMS)
     with pytest.raises(ValueError):
-        orch.handle_interpreted_fact(state, fact, PolicyDecision.EMERGENCY_SKIP)
+        await orch.handle_interpreted_fact(state, fact, PolicyDecision.EMERGENCY_SKIP)
 
 
 # ---------------------------------------------------------------------------
@@ -188,42 +217,42 @@ def test_emergency_skip_decision_is_rejected(orchestrator):
 # ---------------------------------------------------------------------------
 
 
-def test_confirmation_accepted_finalizes_fact(orchestrator):
-    orch, _, _ = orchestrator
+async def test_confirmation_accepted_finalizes_fact(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(FactKey.WARNING_SIGNS, value="none", confidence=0.6)
-    orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
+    await orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
 
-    outcome = orch.handle_confirmation_response(state, FactKey.WARNING_SIGNS, confirmed=True)
+    outcome = await orch.handle_confirmation_response(state, FactKey.WARNING_SIGNS, confirmed=True)
 
     assert outcome.kind == ConversationOutcomeKind.CONTINUE_GATHERING
     assert state.confirmed_facts[FactKey.WARNING_SIGNS].interpreted_value == "none"
     assert FactKey.WARNING_SIGNS not in state.pending_facts
 
 
-def test_confirmation_rejected_twice_triggers_human_handoff(orchestrator):
-    orch, _, _ = orchestrator
+async def test_confirmation_rejected_twice_triggers_human_handoff(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(FactKey.WARNING_SIGNS, value="none", confidence=0.6)
-    orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
+    await orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
 
-    first = orch.handle_confirmation_response(state, FactKey.WARNING_SIGNS, confirmed=False)
+    first = await orch.handle_confirmation_response(state, FactKey.WARNING_SIGNS, confirmed=False)
     assert first.kind == ConversationOutcomeKind.SAY_REASK
 
     # re-present (second read-back attempt) then reject again
-    orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
-    second = orch.handle_confirmation_response(state, FactKey.WARNING_SIGNS, confirmed=False)
+    await orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
+    second = await orch.handle_confirmation_response(state, FactKey.WARNING_SIGNS, confirmed=False)
 
     assert second.kind == ConversationOutcomeKind.HUMAN_HANDOFF
 
 
-def test_silence_models_as_confirmed_false_counts_as_failed_attempt(orchestrator):
-    orch, _, _ = orchestrator
+async def test_silence_models_as_confirmed_false_counts_as_failed_attempt(orchestrator):
+    orch, _, _, _ = orchestrator
     state = ConversationState()
     fact = make_fact(FactKey.WARNING_SIGNS, value="none", confidence=0.6)
-    orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
+    await orch.handle_interpreted_fact(state, fact, PolicyDecision.PER_FACT_READBACK)
 
-    outcome = orch.handle_confirmation_response(
+    outcome = await orch.handle_confirmation_response(
         state, FactKey.WARNING_SIGNS, confirmed=False, patient_said_alternative_instead=None
     )
     assert outcome.kind == ConversationOutcomeKind.SAY_REASK
@@ -235,52 +264,61 @@ def test_silence_models_as_confirmed_false_counts_as_failed_attempt(orchestrator
 # ---------------------------------------------------------------------------
 
 
-def _confirm_all_required(orch, state):
+async def _confirm_all_required(orch, state):
     identifier = make_fact(FactKey.IDENTIFIER, value="9876543210", confidence=0.98)
     symptoms = make_fact(FactKey.SYMPTOMS, value="fever, cough", confidence=0.95)
     warning = make_fact(FactKey.WARNING_SIGNS, value="none", confidence=0.95)
 
-    orch.handle_interpreted_fact(state, identifier, PolicyDecision.ONE_SHOT_SUMMARY)
-    orch.handle_interpreted_fact(state, symptoms, PolicyDecision.ONE_SHOT_SUMMARY)
-    outcome = orch.handle_interpreted_fact(state, warning, PolicyDecision.ONE_SHOT_SUMMARY)
+    await orch.handle_interpreted_fact(state, identifier, PolicyDecision.ONE_SHOT_SUMMARY)
+    await orch.handle_interpreted_fact(state, symptoms, PolicyDecision.ONE_SHOT_SUMMARY)
+    outcome = await orch.handle_interpreted_fact(state, warning, PolicyDecision.ONE_SHOT_SUMMARY)
     return outcome
 
 
-def test_full_happy_path_calls_rule_engine_and_workflow_in_order_and_returns_referral_ready():
+async def test_full_happy_path_calls_rule_engine_and_workflow_in_order_and_returns_referral_ready():
     engine = FakeRuleEngine(query_result=matched_result(tier=Tier.B, hospital="taluk"))
     sink = FakeWorkflowSink(next_task_id="task-happy")
-    orch = ConversationOrchestrator(engine, sink)
+    fhir = FakeFhirSink(next_patient_fhir_id="patient-happy")
+    orch = ConversationOrchestrator(engine, sink, fhir)
     state = ConversationState(patient_identifier="9876543210")
 
     identifier = make_fact(FactKey.IDENTIFIER, value="9876543210", confidence=0.98)
     symptoms = make_fact(FactKey.SYMPTOMS, value="fever, cough", confidence=0.95)
     warning = make_fact(FactKey.WARNING_SIGNS, value="none", confidence=0.95)
-    orch.handle_interpreted_fact(state, identifier, PolicyDecision.ONE_SHOT_SUMMARY)
-    orch.handle_interpreted_fact(state, symptoms, PolicyDecision.ONE_SHOT_SUMMARY)
-    outcome = orch.handle_interpreted_fact(state, warning, PolicyDecision.ONE_SHOT_SUMMARY)
+    await orch.handle_interpreted_fact(state, identifier, PolicyDecision.ONE_SHOT_SUMMARY)
+    await orch.handle_interpreted_fact(state, symptoms, PolicyDecision.ONE_SHOT_SUMMARY)
+    outcome = await orch.handle_interpreted_fact(state, warning, PolicyDecision.ONE_SHOT_SUMMARY)
 
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert outcome.task_id == "task-happy"
     assert outcome.tier == Tier.B
     assert outcome.triage_data is not None
     assert outcome.triage_data.symptoms == ["fever", "cough"]
+    assert outcome.fhir_write_failed is False
 
     assert len(engine.query_calls) == 1
     assert len(engine.floor_calls) == 1
     assert sink.calls[0][0] == "submit_task"
     assert sink.calls[1] == ("mark_awaiting_approval", "task-happy", Tier.B, "taluk")
 
+    # FHIR writes happen, in order, before the workflow sink is touched.
+    assert [call[0] for call in fhir.calls] == ["record_triage", "record_referral"]
+    assert fhir.calls[0][1] is outcome.triage_data
+    assert fhir.calls[1] == ("record_referral", "patient-happy", Tier.B, "taluk")
 
-def test_no_match_still_submits_task_and_returns_human_handoff():
+
+async def test_no_match_still_records_triage_but_never_calls_record_referral():
     engine = FakeRuleEngine(query_result=no_match_result("unrecognised symptom combination"))
     sink = FakeWorkflowSink(next_task_id="task-nomatch")
-    orch = ConversationOrchestrator(engine, sink)
+    fhir = FakeFhirSink()
+    orch = ConversationOrchestrator(engine, sink, fhir)
     state = ConversationState(patient_identifier="111")
 
-    outcome = _confirm_all_required(orch, state)
+    outcome = await _confirm_all_required(orch, state)
 
     assert outcome.kind == ConversationOutcomeKind.HUMAN_HANDOFF
     assert outcome.task_id == "task-nomatch"
+    assert outcome.fhir_write_failed is False
     assert sink.calls[0] == ("submit_task", False)
     assert sink.calls[1] == (
         "mark_human_handoff",
@@ -288,13 +326,70 @@ def test_no_match_still_submits_task_and_returns_human_handoff():
         "unrecognised symptom combination",
     )
 
+    # There is still a confirmed case worth recording even with no tier...
+    assert [call[0] for call in fhir.calls] == ["record_triage"]
+    # ...but there is no tier to refer against, so record_referral never fires.
+    assert not any(call[0] == "record_referral" for call in fhir.calls)
+
+
+async def test_fhir_outage_on_record_triage_does_not_block_referral():
+    engine = FakeRuleEngine(query_result=matched_result(tier=Tier.B, hospital="taluk"))
+    sink = FakeWorkflowSink(next_task_id="task-fhir-down")
+    fhir = FakeFhirSink(record_triage_exception=RuntimeError("HAPI FHIR unreachable"))
+    orch = ConversationOrchestrator(engine, sink, fhir)
+    state = ConversationState(patient_identifier="222")
+
+    outcome = await _confirm_all_required(orch, state)
+
+    # The referral still reaches the workflow sink — a FHIR outage never
+    # drops it silently.
+    assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
+    assert outcome.fhir_write_failed is True
+    assert sink.calls[0] == ("submit_task", False)
+    assert sink.calls[1][0] == "mark_awaiting_approval"
+
+    # record_triage raised, so there is no patient_fhir_id to refer against —
+    # record_referral is skipped rather than called with a bogus id.
+    assert [call[0] for call in fhir.calls] == ["record_triage"]
+
+
+async def test_fhir_outage_on_record_triage_does_not_block_human_handoff():
+    engine = FakeRuleEngine(query_result=no_match_result("unrecognised"))
+    sink = FakeWorkflowSink(next_task_id="task-fhir-down-handoff")
+    fhir = FakeFhirSink(record_triage_exception=RuntimeError("HAPI FHIR unreachable"))
+    orch = ConversationOrchestrator(engine, sink, fhir)
+    state = ConversationState(patient_identifier="333")
+
+    outcome = await _confirm_all_required(orch, state)
+
+    assert outcome.kind == ConversationOutcomeKind.HUMAN_HANDOFF
+    assert outcome.fhir_write_failed is True
+    assert sink.calls[0][0] == "submit_task"
+    assert sink.calls[1][0] == "mark_human_handoff"
+
+
+async def test_fhir_outage_on_record_referral_still_returns_referral_ready():
+    engine = FakeRuleEngine(query_result=matched_result(tier=Tier.C1, hospital="tertiary"))
+    sink = FakeWorkflowSink(next_task_id="task-referral-down")
+    fhir = FakeFhirSink(record_referral_exception=RuntimeError("HAPI FHIR rejected write"))
+    orch = ConversationOrchestrator(engine, sink, fhir)
+    state = ConversationState(patient_identifier="444")
+
+    outcome = await _confirm_all_required(orch, state)
+
+    assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
+    assert outcome.fhir_write_failed is True
+    assert sink.calls[0][0] == "submit_task"
+    assert sink.calls[1][0] == "mark_awaiting_approval"
+    assert [call[0] for call in fhir.calls] == ["record_triage", "record_referral"]
+
 
 # ---------------------------------------------------------------------------
 # Time-critical detection
 # ---------------------------------------------------------------------------
 
 
-def test_stroke_floor_triggered_case_submits_time_critical_true():
+async def test_stroke_floor_triggered_case_submits_time_critical_true():
     base = matched_result(tier=Tier.B)
     floored = matched_result(
         tier=Tier.C1,
@@ -304,23 +399,25 @@ def test_stroke_floor_triggered_case_submits_time_critical_true():
     )
     engine = FakeRuleEngine(query_result=base, floor_result=floored)
     sink = FakeWorkflowSink(next_task_id="task-stroke")
-    orch = ConversationOrchestrator(engine, sink)
+    fhir = FakeFhirSink()
+    orch = ConversationOrchestrator(engine, sink, fhir)
     state = ConversationState(speech_onset=SpeechOnset.NEW)
 
-    outcome = _confirm_all_required(orch, state)
+    outcome = await _confirm_all_required(orch, state)
 
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert outcome.tier == Tier.C1
     assert sink.calls[0] == ("submit_task", True)
 
 
-def test_routine_case_submits_time_critical_false():
+async def test_routine_case_submits_time_critical_false():
     engine = FakeRuleEngine(query_result=matched_result(tier=Tier.A, hospital="phc"))
     sink = FakeWorkflowSink(next_task_id="task-routine")
-    orch = ConversationOrchestrator(engine, sink)
+    fhir = FakeFhirSink()
+    orch = ConversationOrchestrator(engine, sink, fhir)
     state = ConversationState()
 
-    outcome = _confirm_all_required(orch, state)
+    outcome = await _confirm_all_required(orch, state)
 
     assert outcome.kind == ConversationOutcomeKind.REFERRAL_READY
     assert sink.calls[0] == ("submit_task", False)
@@ -332,7 +429,7 @@ def test_routine_case_submits_time_critical_false():
 
 
 def test_emergency_terms_heard_returns_emergency_window_immediately(orchestrator):
-    orch, _, _ = orchestrator
+    orch, _, _, _ = orchestrator
     state = ConversationState()
 
     outcome = orch.handle_emergency_terms(state)
@@ -345,27 +442,50 @@ def test_emergency_terms_heard_returns_emergency_window_immediately(orchestrator
 # ---------------------------------------------------------------------------
 
 
-def test_silence_with_zero_confirmed_facts_creates_no_callback_task(orchestrator):
-    orch, _, sink = orchestrator
+async def test_silence_with_zero_confirmed_facts_creates_no_callback_task(orchestrator):
+    orch, _, sink, fhir = orchestrator
     state = ConversationState()
 
-    outcome = orch.handle_silence_or_disconnect(state)
+    outcome = await orch.handle_silence_or_disconnect(state)
 
     assert outcome.kind == ConversationOutcomeKind.ABANDONED_WITH_CALLBACK
     assert outcome.task_id is None
     assert sink.calls == []
+    # No confirmed facts means nothing worth recording — record_triage must
+    # not be called.
+    assert fhir.calls == []
 
 
-def test_silence_with_at_least_one_confirmed_fact_creates_callback_task(orchestrator):
-    orch, _, sink = orchestrator
+async def test_silence_with_at_least_one_confirmed_fact_creates_callback_task(orchestrator):
+    orch, _, sink, fhir = orchestrator
     state = ConversationState(patient_identifier="123")
     identifier = make_fact(FactKey.IDENTIFIER, value="123", confidence=0.9)
-    orch.handle_interpreted_fact(state, identifier, PolicyDecision.ONE_SHOT_SUMMARY)
+    await orch.handle_interpreted_fact(state, identifier, PolicyDecision.ONE_SHOT_SUMMARY)
 
-    outcome = orch.handle_silence_or_disconnect(state)
+    outcome = await orch.handle_silence_or_disconnect(state)
 
     assert outcome.kind == ConversationOutcomeKind.ABANDONED_WITH_CALLBACK
     assert outcome.task_id is not None
     assert outcome.triage_data is not None
+    assert outcome.fhir_write_failed is False
+    assert sink.calls[0][0] == "submit_task"
+    assert sink.calls[1][0] == "mark_human_handoff"
+    # Partial data is saved best-effort (architecture.md F6) when any fact
+    # was confirmed.
+    assert [call[0] for call in fhir.calls] == ["record_triage"]
+
+
+async def test_silence_fhir_outage_still_creates_callback_task():
+    sink = FakeWorkflowSink(next_task_id="task-silence-fhir-down")
+    fhir = FakeFhirSink(record_triage_exception=RuntimeError("HAPI FHIR unreachable"))
+    orch = ConversationOrchestrator(FakeRuleEngine(query_result=matched_result()), sink, fhir)
+    state = ConversationState(patient_identifier="999")
+    identifier = make_fact(FactKey.IDENTIFIER, value="999", confidence=0.9)
+    await orch.handle_interpreted_fact(state, identifier, PolicyDecision.ONE_SHOT_SUMMARY)
+
+    outcome = await orch.handle_silence_or_disconnect(state)
+
+    assert outcome.kind == ConversationOutcomeKind.ABANDONED_WITH_CALLBACK
+    assert outcome.fhir_write_failed is True
     assert sink.calls[0][0] == "submit_task"
     assert sink.calls[1][0] == "mark_human_handoff"

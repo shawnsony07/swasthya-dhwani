@@ -40,6 +40,7 @@ class ConversationOutcome(BaseModel):
     task_id: str | None = None
     reason: str | None = None
     triage_data: TriageData | None = None
+    fhir_write_failed: bool = False
 
 
 class FactKey(str, Enum):
@@ -90,6 +91,32 @@ class WorkflowSink(Protocol):
     def mark_awaiting_approval(self, task_id: str, tier: Tier, hospital: str | None) -> None: ...
 
     def mark_human_handoff(self, task_id: str, reason: str) -> None: ...
+
+
+class FhirSink(Protocol):
+    """The subset of `swasthya.fhir.adapter` the orchestrator needs to
+    persist a confirmed case. Async because the real adapter makes HTTP
+    calls to HAPI FHIR — this is the one Protocol on this file's boundary
+    that is not sync, so every `ConversationOrchestrator` method able to
+    reach `finalize_and_route` (directly or by completing the last required
+    fact) must itself be async. See architecture.md section 6 ("FHIR
+    writes") and section 8: a FHIR failure must not crash the call, so
+    implementations are expected to raise `swasthya.fhir.exceptions.
+    FhirUnavailableError`/`FhirRejectedError` rather than anything
+    orchestrator code would need to special-case, and the orchestrator
+    treats either as "proceed without FHIR history" per that section."""
+
+    async def record_triage(self, triage: TriageData) -> str:
+        """Resolves/creates the FHIR Patient, writes symptom Observations
+        and the interpretation Provenance, and returns the patient's FHIR
+        id for a following `record_referral` call."""
+        ...
+
+    async def record_referral(
+        self, patient_fhir_id: str, tier: Tier, hospital: str | None
+    ) -> str:
+        """Writes the referral ServiceRequest and returns its FHIR id."""
+        ...
 
 
 MAX_READBACK_FAILURES = 2

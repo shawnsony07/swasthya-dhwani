@@ -31,6 +31,7 @@ from swasthya.voice.conversation_contracts import (
     ConversationOutcome,
     ConversationOutcomeKind,
     FactKey,
+    FhirSink,
     PendingFact,
     RuleEngine,
     WorkflowSink,
@@ -106,15 +107,16 @@ class ConversationOrchestrator:
     (or reuse across calls — it is stateless; all state lives on the
     `ConversationState` passed into each method)."""
 
-    def __init__(self, rule_engine: RuleEngine, workflow: WorkflowSink) -> None:
+    def __init__(self, rule_engine: RuleEngine, workflow: WorkflowSink, fhir: FhirSink) -> None:
         self._rule_engine = rule_engine
         self._workflow = workflow
+        self._fhir = fhir
 
     # -------------------------------------------------------------------
     # L1 — read-back confirmation
     # -------------------------------------------------------------------
 
-    def handle_interpreted_fact(
+    async def handle_interpreted_fact(
         self,
         state: ConversationState,
         fact: PendingFact,
@@ -165,7 +167,7 @@ class ConversationOrchestrator:
             # speaks from `speak_text` is a courtesy recap, not an
             # additional gate on routing.
             if state.all_required_facts_confirmed():
-                return self.finalize_and_route(state)
+                return await self.finalize_and_route(state)
             return ConversationOutcome(
                 kind=ConversationOutcomeKind.SAY_ONE_SHOT_SUMMARY,
                 speak_text=fact.interpreted_value,
@@ -215,7 +217,7 @@ class ConversationOrchestrator:
             speak_text="I didn't catch that clearly, could you say it again?",
         )
 
-    def handle_confirmation_response(
+    async def handle_confirmation_response(
         self,
         state: ConversationState,
         fact_key: FactKey,
@@ -256,7 +258,7 @@ class ConversationOrchestrator:
             logger.info("conversation.fact_confirmed", fact_key=fact_key.value)
 
             if state.all_required_facts_confirmed():
-                return self.finalize_and_route(state)
+                return await self.finalize_and_route(state)
             return ConversationOutcome(kind=ConversationOutcomeKind.CONTINUE_GATHERING)
 
         # Rejected (including silence).
@@ -296,7 +298,7 @@ class ConversationOrchestrator:
     # Route to the rule engine once every required fact is confirmed
     # -------------------------------------------------------------------
 
-    def finalize_and_route(self, state: ConversationState) -> ConversationOutcome:
+    async def finalize_and_route(self, state: ConversationState) -> ConversationOutcome:
         if not state.all_required_facts_confirmed():
             missing = [k.value for k in REQUIRED_FACTS if k not in state.confirmed_facts]
             raise ValueError(f"finalize_and_route called with missing facts: {missing}")
@@ -313,6 +315,27 @@ class ConversationOrchestrator:
             triage_data.interpretation_confidence,
         )
 
+        # FHIR write happens before the workflow sink is told anything, but a
+        # FHIR outage (architecture.md section 8: "FHIR (HAPI) down -> triage
+        # proceeds on confirmed data without history") must never swallow a
+        # referral or a handoff. `FhirSink` implementations are expected to
+        # raise rather than silently degrade, so this boundary catches
+        # broadly and only records the failure on the outcome for the
+        # dashboard to show ("History unavailable" per the resilience table).
+        patient_fhir_id, fhir_write_failed = await self._record_triage_best_effort(triage_data)
+        if result.matched and result.tier is not None and not fhir_write_failed:
+            try:
+                await self._fhir.record_referral(
+                    patient_fhir_id, result.tier, result.hospital_tier_required
+                )
+            except Exception:  # noqa: BLE001 - FHIR outage must never block a referral
+                logger.warning(
+                    "conversation.fhir_record_referral_failed",
+                    task_id=state.task_id,
+                    tier=result.tier.value,
+                )
+                fhir_write_failed = True
+
         if not result.matched:
             logger.warning(
                 "conversation.no_match",
@@ -328,6 +351,7 @@ class ConversationOrchestrator:
                 task_id=task_id,
                 reason=result.no_match_reason,
                 triage_data=triage_data,
+                fhir_write_failed=fhir_write_failed,
             )
 
         # Time-critical if the final tier is the stroke tier (C1) or the
@@ -369,6 +393,7 @@ class ConversationOrchestrator:
             tier=result.tier,
             hospital_tier_required=result.hospital_tier_required,
             triage_data=triage_data,
+            fhir_write_failed=fhir_write_failed,
         )
 
     def _build_triage_data(self, state: ConversationState) -> TriageData:
@@ -405,6 +430,24 @@ class ConversationOrchestrator:
             interpreter_model=symptoms_fact.interpreter_model,
         )
 
+    async def _record_triage_best_effort(self, triage_data: TriageData) -> tuple[str, bool]:
+        """Call `FhirSink.record_triage`, never letting a FHIR outage block
+        the referral/handoff that follows (architecture.md section 8: "FHIR
+        down -> triage proceeds on confirmed data without history"). Returns
+        `(patient_fhir_id, fhir_write_failed)` — on failure `patient_fhir_id`
+        is `""` (there is nothing to key a referral write off of, so a
+        following `record_referral` attempt is skipped by the caller) and
+        `fhir_write_failed` is `True` so the outcome and the dashboard can
+        show the degraded state instead of silently losing it."""
+        try:
+            return await self._fhir.record_triage(triage_data), False
+        except Exception:  # noqa: BLE001 - FHIR outage must never block the call
+            logger.warning(
+                "conversation.fhir_record_triage_failed",
+                patient_identifier_known=bool(triage_data.patient_identifier),
+            )
+            return "", True
+
     # -------------------------------------------------------------------
     # Emergency path (architecture.md F4 / L3) — bypasses the rest of the loop
     # -------------------------------------------------------------------
@@ -429,7 +472,7 @@ class ConversationOrchestrator:
     # Silence / abandonment (architecture.md F6, loop L11)
     # -------------------------------------------------------------------
 
-    def handle_silence_or_disconnect(self, state: ConversationState) -> ConversationOutcome:
+    async def handle_silence_or_disconnect(self, state: ConversationState) -> ConversationOutcome:
         """A caller who goes silent or disconnects mid-call must never leave
         an open loop (architecture.md section 4: "a caller who stops
         responding still ends in a handoff or callback, never an open
@@ -460,6 +503,10 @@ class ConversationOrchestrator:
             )
 
         partial = self._build_partial_triage_data(state)
+        # Best-effort FHIR write: F6 says "partial data is saved if any was
+        # confirmed", but a FHIR outage must still never block the callback
+        # task from reaching the nurse queue (section 8).
+        _, fhir_write_failed = await self._record_triage_best_effort(partial)
         task_id = self._workflow.submit_task(is_time_critical=state.is_time_critical)
         state.task_id = task_id
         self._workflow.mark_human_handoff(
@@ -474,6 +521,7 @@ class ConversationOrchestrator:
             kind=ConversationOutcomeKind.ABANDONED_WITH_CALLBACK,
             task_id=task_id,
             triage_data=partial,
+            fhir_write_failed=fhir_write_failed,
         )
 
     def _build_partial_triage_data(self, state: ConversationState) -> TriageData:

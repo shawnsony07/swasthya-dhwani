@@ -15,17 +15,23 @@ tested on its own.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Coroutine
 
 import structlog
 from livekit.agents import AgentSession, JobContext, WorkerOptions, cli
 from livekit.agents.llm import FallbackAdapter
 from livekit.plugins import google, sarvam
+from sqlalchemy.orm import Session, sessionmaker
 
-from swasthya.contracts import SpeechOnset, Tier, TriageResult
+from swasthya.contracts import SpeechOnset, TaskState, Tier, TriageData, TriageResult
+from swasthya.db.models import Task
+from swasthya.db.session import build_engine, build_session_factory, create_all
+from swasthya.fhir import adapter as fhir_adapter
 from swasthya.protocol.kerala_protocol_mcp import apply_acuity_floor, query_triage_protocol
 from swasthya.voice.agent import MalayalamTriageAgent
 from swasthya.voice.conversation import ConversationOrchestrator
-from swasthya.workflow.weft_workflow import submit_task
+from swasthya.workflow.exceptions import TaskNotFoundError
+from swasthya.workflow.weft_workflow import new_task_id, submit_task, transition
 
 logger = structlog.get_logger(__name__)
 
@@ -55,36 +61,82 @@ class _RuleEngineAdapter:
 
 
 class _WorkflowSinkAdapter:
-    """Adapts `weft_workflow` (which needs a SQLAlchemy Session) to the
-    session-less `WorkflowSink` Protocol. A real deployment injects a
-    request-scoped session here; see the TODO below."""
+    """Adapts `weft_workflow` (which needs a SQLAlchemy `Session`) to the
+    session-less `WorkflowSink` Protocol.
 
-    def __init__(self) -> None:
-        # TODO(pilot): replace with a real SQLAlchemy session factory wired
-        # to DATABASE_URL once this agent runs inside the full service mesh
-        # rather than standalone. Tracked as a known gap, not hidden.
-        self._session = None
+    One instance is constructed per call (see `entrypoint`), opening one
+    `Session` for the lifetime of that call and committing after every
+    state-changing operation — so a mid-call crash doesn't lose audit rows
+    already written for earlier facts, at the cost of one extra round trip
+    per transition. That trade-off favors the audit trail (section 9) over
+    raw throughput, which is the right side to err on for this module.
+    """
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._session: Session = session_factory()
+
+    def close(self) -> None:
+        self._session.close()
 
     def submit_task(self, is_time_critical: bool) -> str:
-        if self._session is None:
-            raise RuntimeError(
-                "WorkflowSinkAdapter has no database session configured; "
-                "wire DATABASE_URL and a session factory before deploying."
-            )
-        task = submit_task(self._session, task_id=_new_task_id(), is_time_critical=is_time_critical)
-        return task.task_id
+        task_id = new_task_id()
+        submit_task(self._session, task_id=task_id, is_time_critical=is_time_critical)
+        # SUBMITTED -> WORKING immediately: ALLOWED_TRANSITIONS only permits
+        # AWAITING_APPROVAL/HUMAN_HANDOFF from WORKING, never straight from
+        # SUBMITTED, and the orchestrator's next call is always one of those.
+        transition(self._session, task_id, TaskState.WORKING, actor="agent")
+        self._session.commit()
+        return task_id
 
-    def mark_awaiting_approval(self, task_id: str, tier: object, hospital: str | None) -> None:
-        raise NotImplementedError("wire to weft_workflow.transition(AWAITING_APPROVAL) once the session is live")
+    def mark_awaiting_approval(self, task_id: str, tier: Tier, hospital: str | None) -> None:
+        if hospital is None:
+            # Mirrors the T4 guard in weft_workflow.check_timeouts: a task
+            # must never enter AWAITING_APPROVAL with no hospital, or a
+            # later timeout would hit MissingHospitalForEscalationError
+            # instead of escalating cleanly. Catch it here, at the point
+            # the hospital should have been chosen, not downstream.
+            raise ValueError(
+                f"mark_awaiting_approval called for {task_id} with hospital=None; "
+                "the rule engine must set hospital_tier_required for a matched tier."
+            )
+        task = self._session.get(Task, task_id)
+        if task is None:
+            raise TaskNotFoundError(task_id)
+        task.tier = tier.value
+        task.hospital = hospital
+        transition(self._session, task_id, TaskState.AWAITING_APPROVAL, actor="rule_engine")
+        self._session.commit()
 
     def mark_human_handoff(self, task_id: str, reason: str) -> None:
-        raise NotImplementedError("wire to weft_workflow.transition(HUMAN_HANDOFF) once the session is live")
+        transition(
+            self._session, task_id, TaskState.HUMAN_HANDOFF, actor="rule_engine", reason=reason
+        )
+        self._session.commit()
 
 
-def _new_task_id() -> str:
-    import uuid
+class _FhirSinkAdapter:
+    """Adapts the free functions in `swasthya.fhir.adapter` to the
+    `conversation_contracts.FhirSink` Protocol the orchestrator expects.
 
-    return str(uuid.uuid4())
+    `adapter.get_or_create_patient`/`write_triage_record`/`write_referral`
+    raise `FhirUnavailableError`/`FhirRejectedError` on failure rather than
+    returning a sentinel; this adapter deliberately does not catch them —
+    `ConversationOrchestrator` is the layer that decides a FHIR failure must
+    not block a referral (architecture.md section 8), so catching here would
+    just duplicate that policy in two places.
+    """
+
+    async def record_triage(self, triage: TriageData) -> str:
+        patient_fhir_id = await fhir_adapter.get_or_create_patient(
+            triage.patient_identifier, triage.identifier_type
+        )
+        await fhir_adapter.write_triage_record(triage, patient_fhir_id)
+        return patient_fhir_id
+
+    async def record_referral(
+        self, patient_fhir_id: str, tier: Tier, hospital: str | None
+    ) -> str:
+        return await fhir_adapter.write_referral(patient_fhir_id, tier.value, hospital)
 
 
 def _build_llm() -> FallbackAdapter:
@@ -94,6 +146,23 @@ def _build_llm() -> FallbackAdapter:
         [google.LLM(model=primary_model), google.LLM(model=fallback_model)],
         attempt_timeout=8.0,
     )
+
+
+_session_factory: sessionmaker[Session] | None = None
+
+
+def _get_session_factory() -> sessionmaker[Session]:
+    """Builds the process-wide engine/session factory on first use, not at
+    import time — importing this module (e.g. from a test) must not try to
+    open a database connection. `create_all` is a dev/test convenience; a
+    real deployment runs the Alembic migration in `migrations/` instead and
+    this call is a no-op against an already-migrated schema."""
+    global _session_factory
+    if _session_factory is None:
+        engine = build_engine()
+        create_all(engine)
+        _session_factory = build_session_factory(engine)
+    return _session_factory
 
 
 async def entrypoint(ctx: JobContext) -> None:
@@ -108,13 +177,25 @@ async def entrypoint(ctx: JobContext) -> None:
         # this would otherwise use is deprecated.
     )
 
+    workflow_sink = _WorkflowSinkAdapter(_get_session_factory())
+    ctx.add_shutdown_callback(_close_workflow_sink(workflow_sink))
+
     orchestrator = ConversationOrchestrator(
-        rule_engine=_RuleEngineAdapter(), workflow=_WorkflowSinkAdapter()
+        rule_engine=_RuleEngineAdapter(),
+        workflow=workflow_sink,
+        fhir=_FhirSinkAdapter(),
     )
     agent = MalayalamTriageAgent(orchestrator)
 
     await session.start(agent=agent, room=ctx.room)
     logger.info("voice.session_started", room=ctx.room.name)
+
+
+def _close_workflow_sink(workflow_sink: _WorkflowSinkAdapter) -> Callable[[], Coroutine[None, None, None]]:
+    async def _callback() -> None:
+        workflow_sink.close()
+
+    return _callback
 
 
 if __name__ == "__main__":

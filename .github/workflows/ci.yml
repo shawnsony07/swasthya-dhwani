@@ -31,6 +31,9 @@ jobs:
       - name: Unit tests
         run: pytest tests/ -v
 
+      - name: End-to-end replay harness (release gate 2 — every terminal state reachable)
+        run: python simulate_e2e.py
+
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
