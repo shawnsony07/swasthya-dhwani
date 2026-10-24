@@ -19,3 +19,6 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+*.zip
+*.tar*
+*.crdownload
