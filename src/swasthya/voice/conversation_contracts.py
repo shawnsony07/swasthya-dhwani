@@ -32,6 +32,7 @@ class ConversationOutcomeKind(str, Enum):
     ABANDONED_WITH_CALLBACK = "abandoned_with_callback"
     EMERGENCY_ESCALATED = "emergency_escalated"
     EMERGENCY_CALL_FAILED = "emergency_call_failed"
+    JOINED_EXISTING_CASE = "joined_existing_case"
 
 
 class ConversationOutcome(BaseModel):
