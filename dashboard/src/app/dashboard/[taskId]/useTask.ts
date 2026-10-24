@@ -34,6 +34,12 @@ export function useTask(taskId: string) {
   }, [accessToken, taskId]);
 
   useEffect(() => {
+    // Standard fetch-on-mount/dependency-change: `load`'s own setState
+    // calls happen inside its async body (after the awaited fetch), not
+    // synchronously in this effect — the lint rule's static check can't
+    // see through the async boundary, but there is no cascading
+    // synchronous render here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (status !== "authenticated") return;
     load();
   }, [status, load]);
