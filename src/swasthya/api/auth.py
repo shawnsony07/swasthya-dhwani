@@ -30,8 +30,11 @@ from jose import JWTError, jwt
 
 logger = structlog.get_logger(__name__)
 
-_KEYCLOAK_REALM = "swasthya"
 _JWKS_CACHE_TTL_SECONDS = 300.0
+
+
+def _keycloak_realm() -> str:
+    return os.environ.get("KEYCLOAK_REALM", "swasthya")
 
 # Simple timestamped cache rather than cachetools.TTLCache: there is
 # exactly one cache entry (the JWKS document for one realm), so a TTLCache
