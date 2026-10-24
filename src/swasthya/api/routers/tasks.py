@@ -171,3 +171,80 @@ def reject_task(
     db.commit()
     logger.info("api.task_rejected", task_id=task_id, actor=body.actor, reason=body.reason)
     return _to_detail(task)
+
+
+@router.post("/tasks/{task_id}/hospital-response", response_model=TaskDetail)
+def hospital_response(
+    task_id: str,
+    body: HospitalResponseRequest,
+    db: Session = Depends(get_db),
+    _roles: set[str] = Depends(require_role("doctor", "nurse", "admin")),
+) -> TaskDetail:
+    try:
+        task = handle_hospital_response(
+            db,
+            task_id,
+            accepted=body.accepted,
+            re_route_hospital=body.re_route_hospital,
+            reason=body.reason,
+            actor=body.actor,
+        )
+    except TaskNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except IllegalTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    db.commit()
+    logger.info("api.hospital_response", task_id=task_id, accepted=body.accepted, actor=body.actor)
+    return _to_detail(task)
+
+
+@router.post("/tasks/{task_id}/ambulance-status", response_model=TaskDetail)
+def ambulance_status(
+    task_id: str,
+    body: AmbulanceStatusRequest,
+    db: Session = Depends(get_db),
+    _roles: set[str] = Depends(require_role("doctor", "nurse", "admin")),
+) -> TaskDetail:
+    try:
+        task = handle_ambulance_status(
+            db,
+            task_id,
+            dispatched=body.dispatched,
+            vehicle_id=body.vehicle_id,
+            reason=body.reason,
+            actor=body.actor,
+        )
+    except TaskNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except IllegalTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    db.commit()
+    logger.info("api.ambulance_status", task_id=task_id, dispatched=body.dispatched, actor=body.actor)
+    return _to_detail(task)
+
+
+@router.post("/tasks/{task_id}/follow-up", response_model=TaskDetail)
+def follow_up(
+    task_id: str,
+    body: FollowUpRequest,
+    db: Session = Depends(get_db),
+    _roles: set[str] = Depends(require_role("nurse", "doctor", "admin")),
+) -> TaskDetail:
+    try:
+        task = handle_follow_up(
+            db,
+            task_id,
+            reached_care=body.reached_care,
+            notes=body.notes,
+            actor=body.actor,
+        )
+    except TaskNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except IllegalTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    db.commit()
+    logger.info("api.follow_up", task_id=task_id, reached_care=body.reached_care, actor=body.actor)
+    return _to_detail(task)
