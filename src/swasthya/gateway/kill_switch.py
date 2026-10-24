@@ -20,6 +20,7 @@ See `action_gateway.py` for how this is wired.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Protocol
 
 import structlog
 from pydantic import BaseModel
@@ -34,29 +35,62 @@ class KillSwitchState(BaseModel):
     reason: str | None = None
 
 
-class KillSwitch:
+class KillSwitchStore(Protocol):
+    """Storage seam so a DB-backed store (`swasthya.db.kill_switch_store.
+    DbKillSwitchStore`) can replace the in-memory default without any
+    change to `KillSwitch` or the gateway.
+
+    A DB-backed store is not an optional upgrade for this one setting the
+    way it is for `AllowList`/`RateLimiter`: the API (where an admin flips
+    the switch) and the voice agent (where `ActionGateway` reads it before
+    every dispatch) are separate processes, so in-memory state here would
+    silently never be seen by the other process. Any real deployment must
+    use the DB-backed store."""
+
+    def get(self) -> KillSwitchState: ...
+
+    def set(self, state: KillSwitchState) -> None: ...
+
+
+class InMemoryKillSwitchStore:
+    """Default store: a single process-local state object. Fine for
+    tests and single-process usage; see `KillSwitchStore`'s docstring for
+    why a real deployment needs the DB-backed store instead."""
+
     def __init__(self) -> None:
         self._state = KillSwitchState()
 
+    def get(self) -> KillSwitchState:
+        return self._state
+
+    def set(self, state: KillSwitchState) -> None:
+        self._state = state
+
+
+class KillSwitch:
+    def __init__(self, store: KillSwitchStore | None = None) -> None:
+        self._store = store or InMemoryKillSwitchStore()
+
     @property
     def is_active(self) -> bool:
-        return self._state.active
+        return self._store.get().active
 
     @property
     def state(self) -> KillSwitchState:
-        return self._state.model_copy()
+        return self._store.get().model_copy()
 
     def engage(self, by: str, reason: str | None = None) -> KillSwitchState:
         """Turns the kill switch ON. No reason required — this is the
         panic-button path and must never be slowed down by validation."""
-        self._state = KillSwitchState(
+        new_state = KillSwitchState(
             active=True,
             changed_by=by,
             changed_at=datetime.now(UTC),
             reason=reason,
         )
+        self._store.set(new_state)
         logger.warning("kill_switch.engaged", by=by, reason=reason)
-        return self.state
+        return new_state.model_copy()
 
     def disable(self, by: str, reason: str) -> KillSwitchState:
         """Turns the kill switch OFF (re-enable). A non-empty `reason` is
@@ -65,11 +99,12 @@ class KillSwitch:
             logger.error("kill_switch.disable_rejected_no_reason", by=by)
             raise ValueError("A reason is required to re-enable the kill switch (L34).")
 
-        self._state = KillSwitchState(
+        new_state = KillSwitchState(
             active=False,
             changed_by=by,
             changed_at=datetime.now(UTC),
             reason=reason,
         )
+        self._store.set(new_state)
         logger.warning("kill_switch.disabled", by=by, reason=reason)
-        return self.state
+        return new_state.model_copy()
