@@ -27,7 +27,10 @@ from sqlalchemy.orm import Session
 from swasthya.api.auth import get_current_roles, require_role
 from swasthya.api.db import get_db
 from swasthya.api.schemas import (
+    AmbulanceStatusRequest,
     ApproveRequest,
+    FollowUpRequest,
+    HospitalResponseRequest,
     RejectRequest,
     TaskDetail,
     TaskListResponse,
@@ -37,7 +40,13 @@ from swasthya.api.schemas import (
 from swasthya.contracts import TaskState, Tier
 from swasthya.db.models import Task
 from swasthya.workflow.exceptions import IllegalTransitionError, TaskNotFoundError
-from swasthya.workflow.weft_workflow import reject_with_reason, transition
+from swasthya.workflow.weft_workflow import (
+    handle_ambulance_status,
+    handle_follow_up,
+    handle_hospital_response,
+    reject_with_reason,
+    transition,
+)
 
 logger = structlog.get_logger(__name__)
 
