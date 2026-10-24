@@ -326,6 +326,29 @@ class ConversationOrchestrator:
 
         triage_data = self._build_triage_data(state)
 
+        # L26: a second call from the same patient while an earlier case
+        # is still open joins that case instead of starting a new one.
+        # Checked before the rule engine runs at all -- a duplicate call
+        # doesn't need a second tier decision, it needs to be told the
+        # first one is already in motion.
+        existing_task_id = self._workflow.find_open_task_for_identifier(
+            triage_data.patient_identifier
+        )
+        if existing_task_id is not None:
+            state.task_id = existing_task_id
+            logger.info(
+                "conversation.joined_existing_case",
+                task_id=existing_task_id,
+            )
+            return ConversationOutcome(
+                kind=ConversationOutcomeKind.JOINED_EXISTING_CASE,
+                task_id=existing_task_id,
+                speak_text=(
+                    "We already have an active case for you — a doctor is "
+                    "reviewing it. Help is already on the way."
+                ),
+            )
+
         base_result: TriageResult = self._rule_engine.query(
             triage_data.symptoms, triage_data.warning_signs_present
         )
