@@ -54,7 +54,6 @@ services:
     # `service_healthy` (below) and its own FHIR adapter already has
     # timeout/retry handling for "HAPI not ready yet" (architecture.md
     # section 8).
-      start_period: 60s
 
   # Dev mode only. admin/admin is a local-demo-only default -- change
   # KEYCLOAK_ADMIN_PASSWORD before this stack runs anywhere but a laptop.
