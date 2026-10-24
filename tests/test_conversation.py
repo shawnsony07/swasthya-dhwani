@@ -54,6 +54,7 @@ class FakeRuleEngine:
 @dataclass
 class FakeWorkflowSink:
     next_task_id: str = "task-1"
+    existing_open_task_id: str | None = None
     calls: list[tuple] = field(default_factory=list)
 
     def submit_task(self, is_time_critical: bool) -> str:
@@ -68,6 +69,10 @@ class FakeWorkflowSink:
 
     def save_triage_snapshot(self, task_id: str, triage) -> None:
         self.calls.append(("save_triage_snapshot", task_id, triage))
+
+    def find_open_task_for_identifier(self, patient_identifier: str) -> str | None:
+        self.calls.append(("find_open_task_for_identifier", patient_identifier))
+        return self.existing_open_task_id
 
 
 @dataclass
