@@ -311,3 +311,149 @@ def check_timeouts(
 def new_task_id() -> str:
     """Convenience helper for callers that need a fresh task id."""
     return str(uuid.uuid4())
+
+
+def handle_hospital_response(
+    session: Session,
+    task_id: str,
+    *,
+    accepted: bool,
+    re_route_hospital: str | None = None,
+    reason: str | None = None,
+    actor: str = "hospital",
+) -> Task:
+    """Referral acceptance loop (architecture.md loop L23):
+    - When accepted: transitions `AWAITING_HOSPITAL` -> `FOLLOW_UP`.
+    - When declined: re-routes to `re_route_hospital` if provided, remaining in
+      `AWAITING_HOSPITAL` with an updated hospital target, or alerts doctor.
+    """
+    task = _get_task(session, task_id)
+    if accepted:
+        return transition(
+            session,
+            task_id,
+            TaskState.FOLLOW_UP,
+            actor=actor,
+            event="referral_accepted",
+            detail={"hospital": task.hospital},
+        )
+
+    # Declined case: re-route to alternative hospital of the same tier if available
+    detail: dict[str, Any] = {"previous_hospital": task.hospital, "reason": reason}
+    if re_route_hospital:
+        task.hospital = re_route_hospital
+        detail["re_routed_to"] = re_route_hospital
+
+    return transition(
+        session,
+        task_id,
+        TaskState.AWAITING_HOSPITAL,
+        actor=actor,
+        event="referral_declined",
+        reason=reason,
+        detail=detail,
+    )
+
+
+def handle_ambulance_status(
+    session: Session,
+    task_id: str,
+    *,
+    dispatched: bool,
+    vehicle_id: str | None = None,
+    reason: str | None = None,
+    actor: str = "ambulance_dispatch",
+) -> Task:
+    """Ambulance dispatch confirmation loop (architecture.md loop L24):
+    - When dispatched: transitions `AMBULANCE_REQUESTED` -> `FOLLOW_UP`.
+    - When failed: transitions `AMBULANCE_REQUESTED` -> `FAILED` with critical alert.
+    """
+    if dispatched:
+        return transition(
+            session,
+            task_id,
+            TaskState.FOLLOW_UP,
+            actor=actor,
+            event="ambulance_dispatched",
+            detail={"vehicle_id": vehicle_id},
+        )
+    return transition(
+        session,
+        task_id,
+        TaskState.FAILED,
+        actor=actor,
+        event="ambulance_failed",
+        reason=reason,
+        detail={"reason": reason},
+    )
+
+
+def handle_follow_up(
+    session: Session,
+    task_id: str,
+    *,
+    reached_care: bool,
+    notes: str | None = None,
+    actor: str = "nurse",
+) -> Task:
+    """Referral outcome follow-up loop (architecture.md loop L25):
+    - When patient reached care: transitions `FOLLOW_UP` -> `COMPLETED`.
+    - When lost to follow-up: transitions `FOLLOW_UP` -> `FAILED` with escalation note.
+    """
+    detail = {"notes": notes}
+    if reached_care:
+        detail["outcome"] = "patient_reached_care"
+        return transition(
+            session,
+            task_id,
+            TaskState.COMPLETED,
+            actor=actor,
+            event="follow_up_closed",
+            detail=detail,
+        )
+
+    detail["outcome"] = "lost_to_follow_up"
+    return transition(
+        session,
+        task_id,
+        TaskState.FAILED,
+        actor=actor,
+        event="follow_up_closed",
+        reason="lost to follow-up",
+        detail=detail,
+    )
+
+
+def purge_retention(
+    session: Session,
+    retention_cutoff: datetime,
+    *,
+    actor: str = "system",
+) -> int:
+    """Retention purge job (architecture.md loop L29):
+    Redacts raw transcript and raw audio references from `triage_snapshot` on tasks
+    created before `retention_cutoff`, and writes a `purge_completed` audit event.
+    Returns the count of purged tasks.
+    """
+    stmt = select(Task).where(Task.created_at < retention_cutoff)
+    purged_count = 0
+    for task in session.scalars(stmt):
+        if task.triage_snapshot and ("raw_transcript" in task.triage_snapshot):
+            snap = dict(task.triage_snapshot)
+            snap["raw_transcript"] = "[PURGED_PER_RETENTION_POLICY]"
+            snap.pop("audio_clip_path", None)
+            task.triage_snapshot = snap
+            purged_count += 1
+
+    if purged_count > 0:
+        _write_audit(
+            session,
+            task_id="system_batch",
+            event="purge_completed",
+            actor=actor,
+            detail={"purged_tasks": purged_count, "cutoff": retention_cutoff.isoformat()},
+        )
+        session.flush()
+
+    return purged_count
+
