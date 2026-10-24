@@ -1,33 +1,70 @@
 "use client";
 
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
-import { useT } from "@/lib/i18n";
+import { usePathname } from "next/navigation";
 import LangToggle from "./LangToggle";
 
-export default function NavBar({ username }: { username?: string }) {
-  const { t } = useT();
+const NAV_LINKS = [
+  { href: "/dashboard", label: "Operations" },
+  { href: "/dashboard/admin", label: "Admin" },
+  { href: "/dashboard/routing", label: "Routing Board" },
+];
+
+export default function NavBar() {
+  const { data: session } = useSession();
+  const pathname = usePathname();
+  const username = (session?.user as { name?: string })?.name;
+
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-      <Link
-        href="/dashboard"
-        className="text-lg font-semibold text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-      >
-        {t("nav.title")}
-      </Link>
-      <div className="flex items-center gap-3">
+    <header className="nav" role="banner">
+      <div className="nav-inner">
+        <Link href="/dashboard" className="brand" aria-label="Swasthya Dhwani home">
+          <span className="brand-mark" aria-hidden="true">ω</span>
+          <span>
+            <span className="brand-name">Swasthya Dhwani</span>
+            <span className="brand-sub">Clinician Console</span>
+          </span>
+        </Link>
+
+        <nav aria-label="Primary navigation">
+          <ul style={{ display: "flex", gap: 2, listStyle: "none", margin: 0, padding: 0 }}>
+            {NAV_LINKS.map((link) => (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  className="nav-link"
+                  aria-current={
+                    pathname === link.href ||
+                    (link.href !== "/dashboard" && pathname?.startsWith(link.href))
+                      ? "page"
+                      : undefined
+                  }
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <span className="nav-spacer" />
+
         <LangToggle />
+
         {username ? (
-          <span className="text-sm text-slate-600">
-            {t("nav.signedInAs")}: <strong>{username}</strong>
+          <span className="user-pill">
+            <strong>{username}</strong>
+            <span className="role-tag">Clinician</span>
           </span>
         ) : null}
+
         <button
           type="button"
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          className="btn btn-sm"
         >
-          {t("nav.signOut")}
+          Sign out
         </button>
       </div>
     </header>
