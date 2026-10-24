@@ -5,6 +5,8 @@ used for the FHIR adapter.
 """
 from __future__ import annotations
 
+from urllib.parse import parse_qs
+
 import httpx
 import pytest
 import respx
