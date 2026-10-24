@@ -27,6 +27,7 @@ export const dictionary: Dict = {
   "nav.signOut": { en: "Sign out", ml: "സൈൻ ഔട്ട്" },
   "nav.signedInAs": { en: "Signed in as", ml: "സൈൻ ഇൻ ചെയ്തത്" },
 
+  "queue.title": { en: "Emergency Triage Queue", ml: "അടിയന്തര ട്രിയേജ് ക്യൂ" },
   "filter.needsApproval": { en: "Needs approval", ml: "അംഗീകാരം വേണ്ടത്" },
   "filter.all": { en: "All", ml: "എല്ലാം" },
 

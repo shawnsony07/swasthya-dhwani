@@ -46,6 +46,11 @@ export function useTasks(): UseTasksResult {
   }, [accessToken]);
 
   useEffect(() => {
+    if (session?.error === "RefreshAccessTokenError") {
+      setError("Session expired. Please sign in again.");
+      setLoading(false);
+      return;
+    }
     if (status !== "authenticated" || !accessToken) return;
 
     // Standard fetch-on-mount: `load`'s setState calls happen inside its

@@ -8,7 +8,7 @@ import { StateBadge, TierBadge, TimeCriticalBadge } from "@/components/badges";
 import RelativeTime from "@/components/RelativeTime";
 import { useTasks } from "./useTasks";
 import { fetchAdminMetrics } from "@/lib/api";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { formatHospitalName, formatPercent, formatMs } from "@/lib/formatters";
 import type { AdminMetrics, TaskSummary, Tier } from "@/lib/types";
 
@@ -243,14 +243,24 @@ export default function DashboardPage() {
             <div role="alert" className="alert" style={{ margin: "12px 0" }}>
               <p style={{ fontWeight: 700 }}>Could not load cases.</p>
               <p style={{ fontSize: 13, marginTop: 4 }}>{error}</p>
-              <button
-                type="button"
-                onClick={refetch}
-                className="btn btn-sm btn-danger"
-                style={{ marginTop: 8 }}
-              >
-                Try again
-              </button>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={refetch}
+                  className="btn btn-sm btn-danger"
+                >
+                  Try again
+                </button>
+                {(error.toLowerCase().includes("token") || error.toLowerCase().includes("session") || error.toLowerCase().includes("401")) && (
+                  <button
+                    type="button"
+                    onClick={() => signOut({ callbackUrl: "/login" })}
+                    className="btn btn-sm btn-primary"
+                  >
+                    Sign in again
+                  </button>
+                )}
+              </div>
             </div>
           ) : visibleTasks.length === 0 ? (
             <p className="empty">No triage cases match the current filter.</p>
