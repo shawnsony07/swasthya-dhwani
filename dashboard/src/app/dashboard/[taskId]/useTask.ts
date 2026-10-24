@@ -39,8 +39,8 @@ export function useTask(taskId: string) {
     // synchronously in this effect — the lint rule's static check can't
     // see through the async boundary, but there is no cascading
     // synchronous render here.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (status !== "authenticated") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [status, load]);
 
