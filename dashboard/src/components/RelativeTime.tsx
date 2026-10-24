@@ -34,19 +34,23 @@ function formatRelative(iso: string): string {
 }
 
 /** Renders a relative time ("3 minutes ago") that ticks on an interval,
- * with the absolute timestamp in a `title` tooltip for precision. */
+ * with the absolute timestamp in a `title` tooltip for precision.
+ *
+ * `label` is derived fresh on every render from `iso` (a pure, cheap
+ * computation) rather than synchronized into state from an effect --
+ * `tick` exists only to force a re-render every 15s, and is updated from
+ * the timer callback itself, not synchronously in the effect body. */
 export default function RelativeTime({ iso }: { iso: string }) {
-  const [label, setLabel] = useState(() => formatRelative(iso));
+  const [, setTick] = useState(0);
 
   useEffect(() => {
-    setLabel(formatRelative(iso));
-    const id = setInterval(() => setLabel(formatRelative(iso)), 15_000);
+    const id = setInterval(() => setTick((n) => n + 1), 15_000);
     return () => clearInterval(id);
-  }, [iso]);
+  }, []);
 
   return (
     <time dateTime={iso} title={new Date(iso).toLocaleString()}>
-      {label}
+      {formatRelative(iso)}
     </time>
   );
 }
