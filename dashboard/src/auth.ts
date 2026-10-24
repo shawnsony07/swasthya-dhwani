@@ -4,6 +4,7 @@ import type { JWT } from "next-auth/jwt";
 
 const keycloakBaseUrl =
   process.env.KEYCLOAK_BASE_URL ?? "http://localhost:8081";
+const keycloakRealm = process.env.KEYCLOAK_REALM ?? "swasthya";
 
 /**
  * Realm roles we care about, read from the Keycloak access token's
