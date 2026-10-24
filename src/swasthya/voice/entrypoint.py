@@ -315,7 +315,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # request returns real synthesized Malayalam audio.
         tts=sarvam.TTS(
             target_language_code="ml-IN",
-            model="bulbul:v3",
+            model=os.environ.get("SARVAM_TTS_MODEL", "bulbul:v3"),
             speaker=os.environ.get("SARVAM_TTS_VOICE", "priya"),
         ),
         # AgentSession bundles Silero VAD by default (livekit-agents 1.6+);
