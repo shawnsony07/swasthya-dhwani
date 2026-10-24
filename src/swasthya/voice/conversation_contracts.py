@@ -103,6 +103,16 @@ class WorkflowSink(Protocol):
         confirmed facts, not an in-progress guess."""
         ...
 
+    def find_open_task_for_identifier(self, patient_identifier: str) -> str | None:
+        """Architecture.md loop L26: a second call from the same patient
+        while an earlier case is still open joins that case rather than
+        starting a new one. "Open" means any non-terminal `TaskState`
+        (not `COMPLETED`/`FAILED`/`CANCELED`) — an `AWAITING_APPROVAL` or
+        `HUMAN_HANDOFF` case still counts as open. Returns the most
+        recently created matching task_id, or `None` if there isn't one
+        (the common case — most calls aren't duplicates)."""
+        ...
+
 
 class FhirSink(Protocol):
     """The subset of `swasthya.fhir.adapter` the orchestrator needs to
