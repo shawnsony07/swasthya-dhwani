@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from swasthya.contracts import (
+    TERMINAL_STATES,
     ActionOutcome,
     ActionRequest,
     ActionType,
