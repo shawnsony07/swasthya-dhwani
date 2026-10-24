@@ -135,9 +135,11 @@ ALLOWED_TRANSITIONS: dict[TaskState, frozenset[TaskState]] = {
         {TaskState.APPROVED, TaskState.REJECTED, TaskState.AUTO_ESCALATED}
     ),
     TaskState.HUMAN_HANDOFF: frozenset({TaskState.APPROVED, TaskState.REJECTED}),
-    TaskState.APPROVED: frozenset({TaskState.AWAITING_HOSPITAL, TaskState.COMPLETED}),
+    TaskState.APPROVED: frozenset(
+        {TaskState.AWAITING_HOSPITAL, TaskState.AMBULANCE_REQUESTED, TaskState.COMPLETED}
+    ),
     TaskState.AUTO_ESCALATED: frozenset(
-        {TaskState.AWAITING_HOSPITAL, TaskState.COMPLETED}
+        {TaskState.AWAITING_HOSPITAL, TaskState.AMBULANCE_REQUESTED, TaskState.COMPLETED}
     ),
     TaskState.REJECTED: frozenset({TaskState.WORKING}),
     TaskState.AWAITING_HOSPITAL: frozenset(
