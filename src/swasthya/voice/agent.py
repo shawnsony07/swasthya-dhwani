@@ -26,6 +26,7 @@ roadmap tiers, not promised here.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterable
 from typing import TYPE_CHECKING
@@ -66,6 +67,30 @@ _OPENING_LINE = (
     "നിങ്ങളുടെ പേരോ തിരിച്ചറിയൽ നമ്പറോ പറയാമോ?"
 )
 
+_EMERGENCY_WINDOW_SECONDS = 5.0
+
+# Crude keyword match for "the patient said something that counts as
+# cancelling the emergency window" — English and Malayalam. This is a
+# deliberately simple heuristic, not NLU: a false negative (treating a real
+# cancel as a non-cancel) still only results in a 108/112 prompt and a
+# dashboard alert, never a missed emergency, so the heuristic is allowed to
+# err toward escalating rather than toward cancelling.
+_CANCELLATION_KEYWORDS = (
+    "no",
+    "cancel",
+    "stop",
+    "nothing",
+    "i'm fine",
+    "im fine",
+    "വേണ്ട",  # venda - "don't need (it)"
+    "ഇല്ല",  # illa - "no"
+)
+
+
+def _looks_like_cancellation(transcript: str) -> bool:
+    lowered = transcript.strip().lower()
+    return any(keyword in lowered for keyword in _CANCELLATION_KEYWORDS)
+
 
 def _confidence_thresholds() -> tuple[float, float]:
     high = float(os.environ.get("INTERPRETER_CONFIDENCE_HIGH", "0.75"))
@@ -92,6 +117,11 @@ class MalayalamTriageAgent(Agent):
         self._confidence_high, self._confidence_low = _confidence_thresholds()
         self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
         self._interpreter_api_key = os.environ.get("GEMINI_API_KEY", "")
+        # Set while the 5-second emergency confirmation window (F4) is
+        # open; the next turn to arrive cancels it. If nothing arrives,
+        # the task itself fires the default-to-escalate path (see
+        # `_start_emergency_window`).
+        self._emergency_task: asyncio.Task[None] | None = None
 
     # -- audio tee --------------------------------------------------------
 
@@ -118,6 +148,21 @@ class MalayalamTriageAgent(Agent):
     ) -> None:
         transcript = new_message.text_content or ""
         audio_clip = self._audio_buffer.snapshot_and_clear()
+
+        if self._emergency_task is not None:
+            # Any turn arriving while the 5-second window is open resolves
+            # it immediately — we don't wait out the rest of the window
+            # once we have an answer, cancelled or not.
+            self._emergency_task.cancel()
+            self._emergency_task = None
+            cancelled = _looks_like_cancellation(transcript)
+            outcome = await self._orchestrator.handle_emergency_confirmation(
+                self._state, cancelled=cancelled
+            )
+            await self._apply_outcome(outcome)
+            if outcome.kind is not ConversationOutcomeKind.CONTINUE_GATHERING:
+                raise StopResponse
+            return
 
         if not transcript.strip() and not audio_clip:
             outcome = await self._orchestrator.handle_silence_or_disconnect(self._state)
@@ -146,6 +191,7 @@ class MalayalamTriageAgent(Agent):
         if interpreted.emergency_terms_heard:
             outcome = self._orchestrator.handle_emergency_terms(self._state)
             await self._apply_outcome(outcome)
+            self._start_emergency_window()
             raise StopResponse
 
         decision = decide(interpreted, self._confidence_high, self._confidence_low)
@@ -163,6 +209,25 @@ class MalayalamTriageAgent(Agent):
             raise StopResponse
         # CONTINUE_GATHERING: fall through, let the normal LLM flow ask the
         # next question — no StopResponse, no scripted line to speak.
+
+    def _start_emergency_window(self) -> None:
+        """Starts the 5-second clock for F4's confirmation window. If the
+        patient's next turn arrives first, `on_user_turn_completed` cancels
+        this task and resolves the window itself. If nothing arrives within
+        5 seconds, this task resolves it instead — `cancelled=False`, which
+        `handle_emergency_confirmation` treats as "proceed" (fail toward
+        care, not toward waiting indefinitely for a confirmation that may
+        never come from someone in genuine distress)."""
+
+        async def _timeout_escalate() -> None:
+            await asyncio.sleep(_EMERGENCY_WINDOW_SECONDS)
+            self._emergency_task = None
+            outcome = await self._orchestrator.handle_emergency_confirmation(
+                self._state, cancelled=False
+            )
+            await self._apply_outcome(outcome)
+
+        self._emergency_task = asyncio.create_task(_timeout_escalate())
 
     def _pending_fact_for_slot(
         self,

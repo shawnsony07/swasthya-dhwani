@@ -50,8 +50,19 @@ real rule engine + real workflow + real DB agree, end to end, without needing
 live LiveKit/Gemini/Sarvam/HAPI credentials — run it with `python
 simulate_e2e.py`. It's honest about what it does *not* cover (printed at the
 end of its own output): the live interpreter, a live LiveKit room, a real
-HAPI server, and the action gateway (Twilio/SmartThings/voice clone aren't
-wired to `conversation.py`'s emergency signal yet).
+HAPI server, and real Twilio/SmartThings vendor calls.
+
+**Emergency path wired end to end:** F4's 5-second confirmation window now
+runs for real — `agent.py` starts an asyncio timer when emergency terms are
+heard; the next turn (or the timer firing first) resolves it via
+`conversation.py`'s `handle_emergency_confirmation`, which dispatches
+through the real `ActionGateway` (`entrypoint.py`'s
+`_EmergencyDispatcherAdapter`): tries the patient's enrolled contacts in
+priority order (`AllowList.ordered_targets`, new), falls back to
+`DEFAULT_EMERGENCY_CONTACT` for an unenrolled caller (loop L22), and goes
+through the gateway's full allow-list/rate-limit/kill-switch/audit policy.
+Only the vendor call itself is simulated (`LoggingEmergencyCallProvider` —
+no Twilio credentials exist yet).
 
 **Voice cloning note:** Sarvam (the chosen Malayalam TTS vendor) has no voice
 cloning — only fixed voices. `gateway/providers/base.py` defines a
@@ -71,15 +82,17 @@ python -m swasthya.protocol.ingest_protocol --check   # fails if graph.json is s
 python simulate_e2e.py                                 # end-to-end replay harness
 ```
 
-103 tests, all passing as of this build; `simulate_e2e.py` passes 9/9 scenarios.
+114 tests, all passing as of this build; `simulate_e2e.py` passes 10/10 scenarios.
 
 ## Not done yet (see `docs/architecture.md` section 15 for the full tiering)
 
 - Dashboard (Next.js UI)
-- Live Twilio / SmartThings integrations and wiring the action gateway to
-  `conversation.py`'s `SAY_EMERGENCY_WINDOW` signal (gateway providers exist
-  and are tested in isolation, but nothing calls them from a real emergency
-  yet)
+- Live Twilio / SmartThings vendor credentials (the gateway dispatch logic
+  is real and wired to the emergency path; only the actual vendor API call
+  is a logging stand-in)
+- Doctor-approval HTTP API (FastAPI A2A handler, SSE alert stream) — right
+  now only `weft_workflow` functions exist, called directly by tests/the
+  replay harness, not through an endpoint a dashboard could hit
 - Docker Compose stack, Keycloak wiring, CI secret rotation runbook execution
 - A real HAPI FHIR server to run against (the adapter is tested against
   mocked HTTP; `simulate_e2e.py` uses a recording fake, not a live server)

@@ -15,7 +15,9 @@ tested on its own.
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from livekit.agents import AgentSession, JobContext, WorkerOptions, cli
@@ -23,11 +25,30 @@ from livekit.agents.llm import FallbackAdapter
 from livekit.plugins import google, sarvam
 from sqlalchemy.orm import Session, sessionmaker
 
-from swasthya.contracts import SpeechOnset, TaskState, Tier, TriageData, TriageResult
+from swasthya.contracts import (
+    ActionOutcome,
+    ActionRequest,
+    ActionType,
+    ConfirmedByAction,
+    SpeechOnset,
+    TaskState,
+    Tier,
+    TriageData,
+    TriageResult,
+)
 from swasthya.db.models import Task
 from swasthya.db.session import build_engine, build_session_factory, create_all
 from swasthya.fhir import adapter as fhir_adapter
 from swasthya.fhir.redact import hash_identifier
+from swasthya.gateway.action_gateway import ActionGateway
+from swasthya.gateway.allowlist import AllowList
+from swasthya.gateway.kill_switch import KillSwitch
+from swasthya.gateway.providers.null_providers import (
+    LoggingDeviceProvider,
+    LoggingEmergencyCallProvider,
+    NeutralVoiceProvider,
+)
+from swasthya.gateway.rate_limiter import RateLimiter
 from swasthya.protocol.kerala_protocol_mcp import apply_acuity_floor, query_triage_protocol
 from swasthya.voice.agent import MalayalamTriageAgent
 from swasthya.voice.conversation import ConversationOrchestrator
@@ -164,6 +185,95 @@ class _FhirSinkAdapter:
         return await fhir_adapter.write_referral(patient_fhir_id, tier.value, hospital)
 
 
+# Process-wide, not per-call: the kill switch, rate limiter, and allow-list
+# all hold state that must persist across calls (a kill switch engaged for
+# one call must still be engaged for the next; a rate limit is meaningless
+# if it resets every call). Built lazily so importing this module never
+# has side effects.
+_action_gateway: ActionGateway | None = None
+_gateway_allow_list: AllowList | None = None
+
+
+def _get_action_gateway() -> tuple[ActionGateway, AllowList]:
+    global _action_gateway, _gateway_allow_list
+    if _action_gateway is None:
+        _gateway_allow_list = AllowList()
+        # Twilio/SmartThings/a real voice-clone vendor are not wired in —
+        # no credentials for them exist yet (README's "Not done yet"). The
+        # Logging* providers are the honest current behavior, not a test
+        # stub standing in for something that secretly already works.
+        _action_gateway = ActionGateway(
+            allow_list=_gateway_allow_list,
+            rate_limiter=RateLimiter(),
+            kill_switch=KillSwitch(),
+            emergency_provider=LoggingEmergencyCallProvider(),
+            device_provider=LoggingDeviceProvider(),
+            voice_provider=NeutralVoiceProvider(),
+        )
+    assert _gateway_allow_list is not None
+    return _action_gateway, _gateway_allow_list
+
+
+class _EmergencyDispatcherAdapter:
+    """Adapts `ActionGateway` to the `conversation_contracts.
+    EmergencyDispatcher` Protocol. Resolves which contacts to try and in
+    what order (architecture.md F7/L22), then dispatches through the real
+    gateway policy (allow-list, rate limit, kill switch, idempotency,
+    audit) exactly as any other action would.
+    """
+
+    _ACTION_EXPIRY_SECONDS = 30.0
+
+    async def dispatch_emergency(self, patient_id: str, message: str) -> ActionOutcome:
+        gateway, allow_list = _get_action_gateway()
+        effective_patient_id = patient_id or "unknown_caller"
+
+        targets = allow_list.ordered_targets(effective_patient_id)
+        if not targets:
+            # L22: an unenrolled (or not-yet-identified) caller still gets
+            # a real emergency target — the on-call contact, not silence.
+            default_contact = os.environ.get("DEFAULT_EMERGENCY_CONTACT", "")
+            if default_contact:
+                # Registering the fallback contact here is trusted system
+                # configuration, not speech-derived input — the allow-list
+                # rule it must never violate is "speech cannot add
+                # contacts," which this isn't.
+                allow_list.add_entry(
+                    effective_patient_id, default_contact, kind="contact"
+                )
+                targets = [default_contact]
+
+        if not targets:
+            logger.error(
+                "emergency.no_target_configured", patient_id=effective_patient_id
+            )
+            return ActionOutcome.EMERGENCY_CALL_FAILED
+
+        now = datetime.now(UTC)
+        outcome = ActionOutcome.EMERGENCY_CALL_FAILED
+        for target in targets:
+            action = ActionRequest(
+                action_id=str(uuid.uuid4()),
+                idempotency_key=str(uuid.uuid4()),
+                type=ActionType.EMERGENCY_CALL,
+                target=target,
+                payload={"message": message},
+                confirmed_by=ConfirmedByAction.EMERGENCY_WINDOW,
+                confirmed_at=now,
+                expires_at=now + timedelta(seconds=self._ACTION_EXPIRY_SECONDS),
+            )
+            outcome = await gateway.dispatch(action, effective_patient_id)
+            if outcome is ActionOutcome.EMERGENCY_CALLED:
+                return outcome
+            logger.warning(
+                "emergency.contact_attempt_failed",
+                patient_id=effective_patient_id,
+                target=target,
+                outcome=outcome.value,
+            )
+        return outcome
+
+
 def _build_llm() -> FallbackAdapter:
     primary_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
@@ -209,6 +319,7 @@ async def entrypoint(ctx: JobContext) -> None:
         rule_engine=_RuleEngineAdapter(),
         workflow=workflow_sink,
         fhir=_FhirSinkAdapter(),
+        emergency=_EmergencyDispatcherAdapter(),
     )
     agent = MalayalamTriageAgent(orchestrator)
 

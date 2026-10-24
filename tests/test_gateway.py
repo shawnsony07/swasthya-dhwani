@@ -217,3 +217,14 @@ async def test_rate_limit_exceeded_rejects_without_reaching_provider():
     assert outcome1 == ActionOutcome.EMERGENCY_CALLED
     assert outcome2 == ActionOutcome.REJECTED
     assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_ordered_targets_returns_enrollment_order_and_dedupes():
+    allow_list = AllowList()
+    allow_list.add_entry(PATIENT_ID, "caregiver-1", kind="contact")
+    allow_list.add_entry(PATIENT_ID, "on-call-1", kind="contact")
+    allow_list.add_entry(PATIENT_ID, "caregiver-1", kind="contact")  # duplicate, ignored
+
+    assert allow_list.ordered_targets(PATIENT_ID) == ["caregiver-1", "on-call-1"]
+    assert allow_list.ordered_targets("unenrolled-patient") == []

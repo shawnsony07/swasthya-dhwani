@@ -24,12 +24,20 @@ from typing import Final
 
 import structlog
 
-from swasthya.contracts import ConfirmedBy, SpeechOnset, Tier, TriageData, TriageResult
+from swasthya.contracts import (
+    ActionOutcome,
+    ConfirmedBy,
+    SpeechOnset,
+    Tier,
+    TriageData,
+    TriageResult,
+)
 from swasthya.interpreter.confidence_policy import PolicyDecision
 from swasthya.voice.conversation_contracts import (
     MAX_READBACK_FAILURES,
     ConversationOutcome,
     ConversationOutcomeKind,
+    EmergencyDispatcher,
     FactKey,
     FhirSink,
     PendingFact,
@@ -107,10 +115,23 @@ class ConversationOrchestrator:
     (or reuse across calls — it is stateless; all state lives on the
     `ConversationState` passed into each method)."""
 
-    def __init__(self, rule_engine: RuleEngine, workflow: WorkflowSink, fhir: FhirSink) -> None:
+    def __init__(
+        self,
+        rule_engine: RuleEngine,
+        workflow: WorkflowSink,
+        fhir: FhirSink,
+        emergency: EmergencyDispatcher | None = None,
+    ) -> None:
         self._rule_engine = rule_engine
         self._workflow = workflow
         self._fhir = fhir
+        # Optional, not because the emergency path is optional (it is the
+        # single most safety-critical path in the whole system) but because
+        # most tests and call sites predate this wiring and never exercise
+        # it. `handle_emergency_confirmation` raises clearly if a caller
+        # actually reaches it with no dispatcher configured, rather than
+        # silently defaulting to "do nothing" — see that method.
+        self._emergency = emergency
 
     # -------------------------------------------------------------------
     # L1 — read-back confirmation
@@ -468,6 +489,62 @@ class ConversationOrchestrator:
                 "This sounds like it could be an emergency. Please confirm within "
                 "5 seconds if you need an ambulance."
             ),
+        )
+
+    async def handle_emergency_confirmation(
+        self, state: ConversationState, cancelled: bool
+    ) -> ConversationOutcome:
+        """Resolve the 5-second emergency window (architecture.md F4).
+
+        The voice agent glue owns the actual 5-second clock and decides
+        whether the patient said something that counts as a cancel within
+        it; this method only owns what happens *after* that's known.
+        `cancelled=False` covers both an explicit "yes" and silence through
+        the window — F4 says the window escalates "without waiting for full
+        history," so the default on no cancellation is to proceed, not to
+        wait for an explicit confirmation that may never come from someone
+        in genuine distress.
+        """
+        if cancelled:
+            logger.info("conversation.emergency_cancelled", task_id=state.task_id)
+            return ConversationOutcome(
+                kind=ConversationOutcomeKind.CONTINUE_GATHERING,
+                speak_text="Okay, continuing with your call.",
+            )
+
+        if self._emergency is None:
+            # Fail loud, not quiet: a misconfigured deployment must not
+            # silently skip dialing emergency contacts. See __init__.
+            raise RuntimeError(
+                "handle_emergency_confirmation reached dispatch with no "
+                "EmergencyDispatcher configured on this ConversationOrchestrator."
+            )
+
+        message = "Emergency escalation confirmed for a Swasthya-Dhwani triage call."
+        outcome_kind = ConversationOutcomeKind.EMERGENCY_ESCALATED
+        try:
+            action_outcome = await self._emergency.dispatch_emergency(
+                state.patient_identifier, message
+            )
+        except Exception:  # noqa: BLE001 - a dispatch failure must still resolve the call
+            logger.warning("conversation.emergency_dispatch_errored", task_id=state.task_id)
+            action_outcome = ActionOutcome.EMERGENCY_CALL_FAILED
+
+        if action_outcome is not ActionOutcome.EMERGENCY_CALLED:
+            outcome_kind = ConversationOutcomeKind.EMERGENCY_CALL_FAILED
+            speak_text = "Please call 108 or 112 now."
+        else:
+            speak_text = "Help is on the way. Please stay on the line."
+
+        logger.warning(
+            "conversation.emergency_dispatched",
+            task_id=state.task_id,
+            action_outcome=action_outcome.value,
+        )
+        return ConversationOutcome(
+            kind=outcome_kind,
+            speak_text=speak_text,
+            reason=action_outcome.value,
         )
 
     # -------------------------------------------------------------------

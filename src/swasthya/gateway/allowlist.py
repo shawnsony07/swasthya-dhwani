@@ -22,6 +22,15 @@ class AllowListStore(Protocol):
 
     def get(self, patient_id: str) -> set[str]: ...
 
+    def get_ordered(self, patient_id: str) -> list[str]:
+        """Same entries as `get`, in enrollment order. Needed for F7's
+        "contacts are called in the order the nurse set" — a plain `set`
+        has no order, so the store must track it separately. A
+        Postgres-backed store would order by an explicit priority column
+        instead of insertion order; this in-memory default uses insertion
+        order as its best available proxy."""
+        ...
+
     def add(self, patient_id: str, target: str) -> None: ...
 
 
@@ -31,12 +40,18 @@ class InMemoryAllowListStore:
 
     def __init__(self) -> None:
         self._entries: dict[str, set[str]] = {}
+        self._order: dict[str, list[str]] = {}
 
     def get(self, patient_id: str) -> set[str]:
         return self._entries.get(patient_id, set())
 
+    def get_ordered(self, patient_id: str) -> list[str]:
+        return list(self._order.get(patient_id, []))
+
     def add(self, patient_id: str, target: str) -> None:
-        self._entries.setdefault(patient_id, set()).add(target)
+        if target not in self._entries.setdefault(patient_id, set()):
+            self._order.setdefault(patient_id, []).append(target)
+        self._entries[patient_id].add(target)
 
 
 class AllowList:
@@ -55,6 +70,11 @@ class AllowList:
             "allowlist.checked", patient_id=patient_id, target=target, allowed=allowed
         )
         return allowed
+
+    def ordered_targets(self, patient_id: str) -> list[str]:
+        """Enrolled targets for `patient_id`, in the order the nurse set
+        them (F7: contacts are called in this order, first answered wins)."""
+        return self._store.get_ordered(patient_id)
 
     def add_entry(self, patient_id: str, target: str, kind: str) -> None:
         """Trusted-code-only entry point (e.g. nurse enrollment). Never call

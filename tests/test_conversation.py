@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from swasthya.contracts import SpeechOnset, Tier, TriageResult
+from swasthya.contracts import ActionOutcome, SpeechOnset, Tier, TriageResult
 from swasthya.interpreter.confidence_policy import PolicyDecision
 from swasthya.voice.conversation import ConversationOrchestrator, ConversationState
 from swasthya.voice.conversation_contracts import (
@@ -96,6 +96,21 @@ class FakeFhirSink:
         if self.record_referral_exception is not None:
             raise self.record_referral_exception
         return self.next_service_request_id
+
+
+@dataclass
+class FakeEmergencyDispatcher:
+    """In-memory fake satisfying `conversation_contracts.EmergencyDispatcher`."""
+
+    outcome: ActionOutcome = ActionOutcome.EMERGENCY_CALLED
+    dispatch_exception: Exception | None = None
+    calls: list[tuple] = field(default_factory=list)
+
+    async def dispatch_emergency(self, patient_id: str, message: str) -> ActionOutcome:
+        self.calls.append(("dispatch_emergency", patient_id, message))
+        if self.dispatch_exception is not None:
+            raise self.dispatch_exception
+        return self.outcome
 
 
 def make_fact(
@@ -443,6 +458,68 @@ def test_emergency_terms_heard_returns_emergency_window_immediately(orchestrator
     outcome = orch.handle_emergency_terms(state)
 
     assert outcome.kind == ConversationOutcomeKind.SAY_EMERGENCY_WINDOW
+
+
+async def test_emergency_cancelled_within_window_resumes_gathering():
+    engine = FakeRuleEngine(query_result=matched_result())
+    orch = ConversationOrchestrator(engine, FakeWorkflowSink(), FakeFhirSink())
+    state = ConversationState()
+
+    outcome = await orch.handle_emergency_confirmation(state, cancelled=True)
+
+    assert outcome.kind == ConversationOutcomeKind.CONTINUE_GATHERING
+
+
+async def test_emergency_not_cancelled_dispatches_and_escalates():
+    engine = FakeRuleEngine(query_result=matched_result())
+    emergency = FakeEmergencyDispatcher(outcome=ActionOutcome.EMERGENCY_CALLED)
+    orch = ConversationOrchestrator(
+        engine, FakeWorkflowSink(), FakeFhirSink(), emergency=emergency
+    )
+    state = ConversationState(patient_identifier="patient-999")
+
+    outcome = await orch.handle_emergency_confirmation(state, cancelled=False)
+
+    assert outcome.kind == ConversationOutcomeKind.EMERGENCY_ESCALATED
+    assert outcome.reason == ActionOutcome.EMERGENCY_CALLED.value
+    assert emergency.calls == [
+        ("dispatch_emergency", "patient-999", emergency.calls[0][2])
+    ]
+
+
+async def test_emergency_dispatch_failure_tells_caller_to_use_emergency_number():
+    engine = FakeRuleEngine(query_result=matched_result())
+    emergency = FakeEmergencyDispatcher(outcome=ActionOutcome.EMERGENCY_CALL_FAILED)
+    orch = ConversationOrchestrator(
+        engine, FakeWorkflowSink(), FakeFhirSink(), emergency=emergency
+    )
+    state = ConversationState()
+
+    outcome = await orch.handle_emergency_confirmation(state, cancelled=False)
+
+    assert outcome.kind == ConversationOutcomeKind.EMERGENCY_CALL_FAILED
+    assert "108" in outcome.speak_text or "112" in outcome.speak_text
+
+
+async def test_emergency_dispatcher_exception_resolves_as_call_failed_not_a_crash():
+    engine = FakeRuleEngine(query_result=matched_result())
+    emergency = FakeEmergencyDispatcher(dispatch_exception=RuntimeError("gateway down"))
+    orch = ConversationOrchestrator(
+        engine, FakeWorkflowSink(), FakeFhirSink(), emergency=emergency
+    )
+    state = ConversationState()
+
+    outcome = await orch.handle_emergency_confirmation(state, cancelled=False)
+
+    assert outcome.kind == ConversationOutcomeKind.EMERGENCY_CALL_FAILED
+
+
+async def test_emergency_dispatch_with_no_dispatcher_configured_raises_loudly(orchestrator):
+    orch, _, _, _ = orchestrator  # fixture builds with emergency=None
+    state = ConversationState()
+
+    with pytest.raises(RuntimeError):
+        await orch.handle_emergency_confirmation(state, cancelled=False)
 
 
 # ---------------------------------------------------------------------------

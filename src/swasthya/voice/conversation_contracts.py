@@ -15,7 +15,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
-from swasthya.contracts import SpeechOnset, Tier, TriageData, TriageResult
+from swasthya.contracts import ActionOutcome, SpeechOnset, Tier, TriageData, TriageResult
 
 
 class ConversationOutcomeKind(str, Enum):
@@ -30,6 +30,8 @@ class ConversationOutcomeKind(str, Enum):
     REFERRAL_READY = "referral_ready"
     HUMAN_HANDOFF = "human_handoff"
     ABANDONED_WITH_CALLBACK = "abandoned_with_callback"
+    EMERGENCY_ESCALATED = "emergency_escalated"
+    EMERGENCY_CALL_FAILED = "emergency_call_failed"
 
 
 class ConversationOutcome(BaseModel):
@@ -125,6 +127,29 @@ class FhirSink(Protocol):
         self, patient_fhir_id: str, tier: Tier, hospital: str | None
     ) -> str:
         """Writes the referral ServiceRequest and returns its FHIR id."""
+        ...
+
+
+class EmergencyDispatcher(Protocol):
+    """The subset of `swasthya.gateway.action_gateway` the orchestrator
+    needs for F4 (emergency escalation). Async for the same reason
+    `FhirSink` is: the real implementation calls through `ActionGateway`,
+    which calls a real `EmergencyCallProvider`.
+
+    Deliberately a single coarse method rather than exposing the gateway's
+    allow-list/rate-limit/kill-switch machinery here — this module should
+    not need to know how a target contact is resolved or how many are
+    tried; `dispatch_emergency` owns all of that (architecture.md F7: try
+    enrolled contacts in order, fall back to the on-call contact if none
+    are enrolled, per loop L22)."""
+
+    async def dispatch_emergency(self, patient_id: str, message: str) -> ActionOutcome:
+        """Raises the emergency action end to end — allow-list/contact
+        resolution, confirmation window accounting, dispatch, and the
+        dashboard alert on failure are all the implementation's job.
+        Returns the outcome of the *last* attempt (e.g. `EMERGENCY_CALLED`
+        if any contact answered, `EMERGENCY_CALL_FAILED` if every attempt
+        failed)."""
         ...
 
 

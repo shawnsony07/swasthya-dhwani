@@ -44,13 +44,18 @@ class LoggingEmergencyCallProvider:
     """
 
     async def call(self, target: str, message: str) -> ActionOutcome:
+        # `message` collides with stdlib logging's reserved LogRecord
+        # attribute once structlog is routed through stdlib (as a real
+        # deployment's logging config typically does) — renamed to
+        # `call_message` here for the same reason the FHIR adapter renamed
+        # its own `event` kwarg.
         if not _target_is_usable(target):
             logger.warning(
-                "emergency_call.simulated_failure", target=target, message=message
+                "emergency_call.simulated_failure", target=target, call_message=message
             )
             return ActionOutcome.EMERGENCY_CALL_FAILED
 
-        logger.info("emergency_call.simulated", target=target, message=message)
+        logger.info("emergency_call.simulated", target=target, call_message=message)
         return ActionOutcome.EMERGENCY_CALLED
 
 

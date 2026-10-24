@@ -44,7 +44,11 @@ from swasthya.voice.conversation_contracts import (
     FactKey,
     PendingFact,
 )
-from swasthya.voice.entrypoint import _RuleEngineAdapter, _WorkflowSinkAdapter
+from swasthya.voice.entrypoint import (
+    _EmergencyDispatcherAdapter,
+    _RuleEngineAdapter,
+    _WorkflowSinkAdapter,
+)
 from swasthya.workflow.weft_workflow import check_timeouts, reject_with_reason
 
 
@@ -102,11 +106,16 @@ class Harness:
     def __post_init__(self) -> None:
         create_all(self.engine)
 
-    def new_orchestrator(self, fhir: Any | None = None) -> tuple[ConversationOrchestrator, _WorkflowSinkAdapter]:
+    def new_orchestrator(
+        self, fhir: Any | None = None, emergency: Any | None = None
+    ) -> tuple[ConversationOrchestrator, _WorkflowSinkAdapter]:
         session_factory = build_session_factory(self.engine)
         workflow = _WorkflowSinkAdapter(session_factory)
         orchestrator = ConversationOrchestrator(
-            rule_engine=_RuleEngineAdapter(), workflow=workflow, fhir=fhir or _RecordingFhirSink()
+            rule_engine=_RuleEngineAdapter(),
+            workflow=workflow,
+            fhir=fhir or _RecordingFhirSink(),
+            emergency=emergency,
         )
         return orchestrator, workflow
 
@@ -181,19 +190,38 @@ async def scenario_impaired_speech_confirmation_fails(h: Harness) -> None:
 
 
 async def scenario_emergency_terms(h: Harness) -> None:
-    """F4: emergency terms heard -> SAY_EMERGENCY_WINDOW signalled
-    immediately, bypassing the rest of the loop. NOTE: this build does not
-    yet wire that signal to a real Twilio call or an EMERGENCY_ESCALATED
-    task state (the action gateway isn't connected to conversation.py) —
-    flagged here, not hidden."""
+    """F4: emergency terms heard -> SAY_EMERGENCY_WINDOW immediately,
+    bypassing the rest of the loop."""
     orchestrator, _workflow = h.new_orchestrator()
     state = ConversationState()
     outcome = orchestrator.handle_emergency_terms(state)
     h.record(
-        "F4 emergency terms heard",
+        "F4a emergency terms heard",
         ConversationOutcomeKind.SAY_EMERGENCY_WINDOW.value,
         outcome.kind.value,
-        note="not yet wired to a real emergency call or an EMERGENCY_ESCALATED task state",
+    )
+
+
+async def scenario_emergency_window_not_cancelled_dispatches_real_gateway(h: Harness) -> None:
+    """F4 continued: once the window resolves (no cancellation), this now
+    drives the *real* ActionGateway (allow-list, rate limiter, kill switch,
+    audit) through `_EmergencyDispatcherAdapter` — the Logging* providers
+    are the honest current behavior (no Twilio/SmartThings credentials
+    exist), not a test stub standing in for a real vendor call."""
+    import os
+
+    os.environ["DEFAULT_EMERGENCY_CONTACT"] = "oncall-sim"
+    orchestrator, _workflow = h.new_orchestrator(emergency=_EmergencyDispatcherAdapter())
+    state = ConversationState()
+
+    outcome = await orchestrator.handle_emergency_confirmation(state, cancelled=False)
+
+    h.record(
+        "F4b emergency window resolves via real gateway",
+        ConversationOutcomeKind.EMERGENCY_ESCALATED.value,
+        outcome.kind.value,
+        note="dispatched through the real ActionGateway; LoggingEmergencyCallProvider "
+        "stands in for Twilio since no live vendor credentials exist",
     )
 
 
@@ -330,8 +358,10 @@ _NOT_EXERCISED = [
     "Live Gemini-backed interpreter (speech_interpreter.interpret_clip) — needs a real API key",
     "Sarvam STT/TTS and a live LiveKit room — needs real audio and a running room",
     "A real HAPI FHIR server — FhirSink is a recording fake in every scenario here",
-    ("Action gateway dispatch (Twilio emergency call, SmartThings device command, voice clone) — "
-    "not yet connected to conversation.py's SAY_EMERGENCY_WINDOW signal"),
+    ("Real Twilio/SmartThings/voice-clone vendor calls — the action gateway dispatch itself "
+    "(allow-list, rate limit, kill switch, audit) is real in scenario F4b, but "
+    "LoggingEmergencyCallProvider stands in for an actual phone call since no vendor "
+    "credentials exist"),
     ("Doctor dashboard approve/reject HTTP endpoints — exercised here by calling weft_workflow "
     "directly, not through an API a doctor would actually click"),
 ]
@@ -350,6 +380,7 @@ async def main() -> int:
     await scenario_impaired_speech_confirmed(h)
     await scenario_impaired_speech_confirmation_fails(h)
     await scenario_emergency_terms(h)
+    await scenario_emergency_window_not_cancelled_dispatches_real_gateway(h)
     await scenario_no_match_routes_to_human(h)
     await scenario_silence_abandons_with_callback(h)
     await scenario_fhir_outage_does_not_block_referral(h)
