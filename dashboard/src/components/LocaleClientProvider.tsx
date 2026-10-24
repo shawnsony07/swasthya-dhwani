@@ -16,9 +16,9 @@ export default function LocaleClientProvider({
     // "en" to avoid a hydration mismatch, and the real value can only be
     // read after mount. This sets state at most once per mount, never in
     // response to a changing dependency.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     try {
       const stored = window.localStorage.getItem("swasthya.locale");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (stored === "en" || stored === "ml") setLocaleState(stored);
     } catch {
       // localStorage unavailable; default to English
