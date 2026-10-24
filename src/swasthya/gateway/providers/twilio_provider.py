@@ -152,12 +152,17 @@ class TwilioEmergencyCallProvider:
         raise RuntimeError("Twilio call creation did not complete")  # pragma: no cover
 
     async def _poll_until_terminal(self, call_sid: str, started_at: datetime) -> ActionOutcome:
+        # Always poll at least once before ever checking the timeout -- a
+        # ring timeout means "we checked and it's still not answered,"
+        # never "we never got around to checking."
         async with self._client() as client:
+            first_poll = True
             while True:
                 elapsed = (datetime.now(UTC) - started_at).total_seconds()
-                if elapsed >= self._ring_timeout_seconds:
+                if not first_poll and elapsed >= self._ring_timeout_seconds:
                     logger.warning("twilio.ring_timeout", call_sid=call_sid, elapsed=elapsed)
                     return ActionOutcome.EMERGENCY_CALL_FAILED
+                first_poll = False
 
                 try:
                     response = await client.get(
