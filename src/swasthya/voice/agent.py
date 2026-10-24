@@ -264,6 +264,8 @@ class MalayalamTriageAgent(Agent):
             )
         elif outcome.kind is ConversationOutcomeKind.ABANDONED_WITH_CALLBACK:
             logger.warning("voice.abandoned_with_callback", task_id=outcome.task_id)
+        elif outcome.kind is ConversationOutcomeKind.JOINED_EXISTING_CASE:
+            logger.info("voice.joined_existing_case", task_id=outcome.task_id)
 
     def mark_confirmed_by(self, confirmed_by: ConfirmedBy) -> None:
         """Called by the glue layer when a caregiver identifies themselves
