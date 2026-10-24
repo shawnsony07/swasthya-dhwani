@@ -99,7 +99,12 @@ def _confidence_thresholds() -> tuple[float, float]:
 
 
 class MalayalamTriageAgent(Agent):
-    def __init__(self, orchestrator: ConversationOrchestrator) -> None:
+    def __init__(
+        self,
+        orchestrator: ConversationOrchestrator,
+        *,
+        on_session_end: Callable[[], Coroutine[Any, Any, None]] | None = None,
+    ) -> None:
         super().__init__(
             instructions=(
                 "You are a calm Malayalam-speaking triage support voice agent for "
@@ -112,6 +117,7 @@ class MalayalamTriageAgent(Agent):
             ),
         )
         self._orchestrator = orchestrator
+        self._on_session_end = on_session_end
         self._state = ConversationState()
         self._audio_buffer = TurnAudioBuffer()
         self._confidence_high, self._confidence_low = _confidence_thresholds()
