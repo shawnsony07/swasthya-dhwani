@@ -142,7 +142,37 @@ def get_task(
     return _to_detail(task)
 
 
+@router.get("/tasks/{task_id}/audit", response_model=list[AuditEventOut])
+def get_task_audit(
+    task_id: str,
+    db: Session = Depends(get_db),
+    _roles: set[str] = Depends(get_current_roles),
+) -> list[AuditEventOut]:
+    """Chronological audit timeline for one case (append-only log, S6)."""
+    if db.get(Task, task_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"task {task_id!r} not found")
+    stmt = (
+        select(AuditEventRow)
+        .where(AuditEventRow.task_id == task_id)
+        .order_by(AuditEventRow.timestamp.asc(), AuditEventRow.id.asc())
+    )
+    return [
+        AuditEventOut(
+            id=r.id,
+            task_id=r.task_id,
+            event=r.event,
+            actor=r.actor,
+            timestamp=r.timestamp,
+            protocol_version=r.protocol_version,
+            model_id=r.model_id,
+            detail=r.detail or {},
+        )
+        for r in db.scalars(stmt)
+    ]
+
+
 @router.post("/tasks/{task_id}/approve", response_model=TaskDetail)
+
 def approve_task(
     task_id: str,
     body: ApproveRequest,
