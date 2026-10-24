@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from swasthya.api.routers import alerts, health, tasks
+from swasthya.api.routers import admin, alerts, health, tasks
 from swasthya.db.models import OnCallRosterEntry
 from swasthya.db.session import build_engine, build_session_factory, create_all
 from swasthya.workflow.exceptions import MissingHospitalForEscalationError
@@ -134,6 +134,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(tasks.router)
     app.include_router(alerts.router)
+    app.include_router(admin.router)
 
     return app
 
