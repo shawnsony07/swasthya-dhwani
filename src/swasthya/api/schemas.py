@@ -106,3 +106,33 @@ class RosterEntryUpdate(BaseModel):
     contact: str | None = Field(default=None, min_length=1)
     priority_order: int | None = Field(default=None, ge=0)
     active: bool | None = None
+
+
+class HospitalResponseRequest(BaseModel):
+    actor: str = Field(min_length=1)
+    accepted: bool
+    re_route_hospital: str | None = None
+    reason: str | None = None
+
+
+class AmbulanceStatusRequest(BaseModel):
+    actor: str = Field(min_length=1)
+    dispatched: bool
+    vehicle_id: str | None = None
+    reason: str | None = None
+
+
+class FollowUpRequest(BaseModel):
+    actor: str = Field(min_length=1)
+    reached_care: bool
+    notes: str | None = None
+
+
+class PurgeRetentionRequest(BaseModel):
+    actor: str = Field(default="system", min_length=1)
+    retention_days: int = Field(default=90, ge=1)
+
+
+class PurgeRetentionResponse(BaseModel):
+    purged_tasks: int
+    cutoff: datetime
