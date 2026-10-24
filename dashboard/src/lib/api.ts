@@ -1,4 +1,11 @@
-import type { ApiErrorBody, TaskDetail, TaskListResponse } from "./types";
+import type {
+  ApiErrorBody,
+  AuditTimeline,
+  AdminMetrics,
+  RoutingBoard,
+  TaskDetail,
+  TaskListResponse,
+} from "./types";
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -57,7 +64,20 @@ export function fetchTask(
   accessToken: string | undefined,
   taskId: string
 ): Promise<TaskDetail> {
-  return request<TaskDetail>(`/tasks/${encodeURIComponent(taskId)}`, accessToken);
+  return request<TaskDetail>(
+    `/tasks/${encodeURIComponent(taskId)}`,
+    accessToken
+  );
+}
+
+export function fetchAuditTimeline(
+  accessToken: string | undefined,
+  taskId: string
+): Promise<AuditTimeline> {
+  return request<AuditTimeline>(
+    `/tasks/${encodeURIComponent(taskId)}/audit`,
+    accessToken
+  );
 }
 
 export function approveTask(
@@ -65,10 +85,14 @@ export function approveTask(
   taskId: string,
   actor: string
 ): Promise<TaskDetail> {
-  return request<TaskDetail>(`/tasks/${encodeURIComponent(taskId)}/approve`, accessToken, {
-    method: "POST",
-    body: JSON.stringify({ actor }),
-  });
+  return request<TaskDetail>(
+    `/tasks/${encodeURIComponent(taskId)}/approve`,
+    accessToken,
+    {
+      method: "POST",
+      body: JSON.stringify({ actor }),
+    }
+  );
 }
 
 export function rejectTask(
@@ -77,8 +101,24 @@ export function rejectTask(
   actor: string,
   reason: string
 ): Promise<TaskDetail> {
-  return request<TaskDetail>(`/tasks/${encodeURIComponent(taskId)}/reject`, accessToken, {
-    method: "POST",
-    body: JSON.stringify({ actor, reason }),
-  });
+  return request<TaskDetail>(
+    `/tasks/${encodeURIComponent(taskId)}/reject`,
+    accessToken,
+    {
+      method: "POST",
+      body: JSON.stringify({ actor, reason }),
+    }
+  );
+}
+
+export function fetchRoutingBoard(
+  accessToken: string | undefined
+): Promise<RoutingBoard> {
+  return request<RoutingBoard>("/admin/routing", accessToken);
+}
+
+export function fetchAdminMetrics(
+  accessToken: string | undefined
+): Promise<AdminMetrics> {
+  return request<AdminMetrics>("/admin/metrics", accessToken);
 }
