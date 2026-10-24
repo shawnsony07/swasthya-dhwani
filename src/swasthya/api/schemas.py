@@ -65,3 +65,44 @@ class ApproveRequest(BaseModel):
 class RejectRequest(BaseModel):
     actor: str = Field(min_length=1)
     reason: str = Field(min_length=1)
+
+
+class KillSwitchStatus(BaseModel):
+    active: bool
+    changed_by: str | None = None
+    changed_at: datetime | None = None
+    reason: str | None = None
+
+
+class EngageKillSwitchRequest(BaseModel):
+    by: str = Field(min_length=1)
+    reason: str | None = None
+
+
+class DisableKillSwitchRequest(BaseModel):
+    by: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class RosterEntry(BaseModel):
+    id: int
+    role: str
+    contact: str
+    priority_order: int
+    active: bool
+
+
+class RosterEntryCreate(BaseModel):
+    role: str = Field(min_length=1)
+    contact: str = Field(min_length=1)
+    priority_order: int = Field(ge=0)
+    active: bool = True
+
+
+class RosterEntryUpdate(BaseModel):
+    """All fields optional: a PATCH only changes what's provided."""
+
+    role: str | None = Field(default=None, min_length=1)
+    contact: str | None = Field(default=None, min_length=1)
+    priority_order: int | None = Field(default=None, ge=0)
+    active: bool | None = None
