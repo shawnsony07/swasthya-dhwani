@@ -275,8 +275,8 @@ class _EmergencyDispatcherAdapter:
 
 
 def _build_llm() -> FallbackAdapter:
-    primary_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+    primary_model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite")
     return FallbackAdapter(
         [google.LLM(model=primary_model), google.LLM(model=fallback_model)],
         attempt_timeout=8.0,
