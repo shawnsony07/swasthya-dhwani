@@ -1,0 +1,15 @@
+HTTP/1.1 302 Found
+Cache-Control: no-store, must-revalidate, max-age=0
+Set-Cookie: KC_RESTART=;Version=1;Path=/realms/swasthya/;Max-Age=0
+Set-Cookie: KEYCLOAK_IDENTITY=eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJmYjE1OWE0MS0zZjdiLTQ1YWItYjllYy1iOTg4YzkyYzUwMjAifQ.eyJleHAiOjE3OTI5MDUxODEsImlhdCI6MTc5Mjg2OTE4MSwianRpIjoiNmUxYzQ3ZmUtZDkzZS00OTg3LThhNjQtNzI5NmI5ZWI4YjVlIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgxL3JlYWxtcy9zd2FzdGh5YSIsInN1YiI6ImU4ODIyNzk5LWIxYTYtNGE0YS04MDRkLTQ3NDUwZDlmMTRjOSIsInR5cCI6IlNlcmlhbGl6ZWQtSUQiLCJzaWQiOiI4YjUzYWMxOC1jZjU2LTQyOTUtYmZhZC02YmM3ZGQxZjg2ZTkiLCJzdGF0ZV9jaGVja2VyIjoiSkQ4LVExN3o3bnp2Rm5BSWxmM2pxdlZLU0gtTW13Qnk3OHVLbDlRS01tUSJ9.cMcd3kZDqdRjpHd8wW7uVk8c0-U2-pDc5rxri0Z0n9L4yAC6eg5TIVl6lqiw7CB1YU-9DoItuCwFVFS3a-vKQA;Version=1;Path=/realms/swasthya/;Secure;HttpOnly;SameSite=None
+Set-Cookie: KEYCLOAK_SESSION="swasthya/e8822799-b1a6-4a4a-804d-47450d9f14c9/8b53ac18-cf56-4295-bfad-6bc7dd1f86e9";Version=1;Path=/realms/swasthya/;Max-Age=36000;Secure;SameSite=None
+Content-Security-Policy: frame-src 'self'; frame-ancestors 'self'; object-src 'none';
+Location: http://localhost:3000/api/auth/callback/keycloak?state=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiYmdla0dnc01ENnJXUGt4dlZkdmFsREVJQndwcnVaNkRFUmlidURSeXA4WWdJenFoRUpHM1NEVElsa0I2aFZpb1JMMFF0b0tiajNPVzFRUlZvenctelEifQ..P3KWEYEnZgFNBvlsZseL0w.5rtPLW1nAal77jEQPUDXeaallDzIkRetN1wW2ESDIrQQHciwwkYarP-xlLDfxgpAU7aQb7s0j8SiBjaK9AifuffnPpB-09PqdsyuWFuK47vBjV2Mfs1qjPSb_VU5fK0Gpvu0mXCXNjEW2yTryKFI3vpEZZemtQHFwLe_0hhZIZvPXbnPO5H4DmiEAkxs1OoP.6YVbmLK4J8jq8pOrGPv5aUHhUQto2DGIa1ptK2orEkA&session_state=8b53ac18-cf56-4295-bfad-6bc7dd1f86e9&iss=http%3A%2F%2Flocalhost%3A8081%2Frealms%2Fswasthya&code=63f5d5b2-8bcb-4efc-9ea4-752fc024185d.8b53ac18-cf56-4295-bfad-6bc7dd1f86e9.2d99d958-2d39-40a4-88b3-057586a3b294
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Robots-Tag: none
+X-XSS-Protection: 1; mode=block
+content-length: 0
+
