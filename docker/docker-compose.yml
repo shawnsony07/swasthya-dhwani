@@ -42,11 +42,18 @@ services:
       - "8080:8080"
     volumes:
       - hapi-data:/app/data
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/fhir/metadata || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+    # No Docker healthcheck: the hapiproject/hapi:v7.2.0 image is a
+    # minimal JRE-only base with no shell and no wget/curl/cat/which —
+    # confirmed by `docker exec`, every one of those fails with "executable
+    # file not found in $PATH". An exec-based CMD-SHELL healthcheck cannot
+    # run in a container with no shell at all, so one isn't declared here
+    # rather than shipping a healthcheck that always reports "unhealthy"
+    # regardless of whether HAPI is actually up (it was, verified via
+    # `curl http://localhost:8080/fhir/metadata` from the host -> 200).
+    # The `api` service depends on `service_started` for hapi instead of
+    # `service_healthy` (below) and its own FHIR adapter already has
+    # timeout/retry handling for "HAPI not ready yet" (architecture.md
+    # section 8).
       start_period: 60s
 
   # Dev mode only. admin/admin is a local-demo-only default -- change
