@@ -13,6 +13,7 @@ import os
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from swasthya.db.models import Base
 
@@ -29,10 +30,24 @@ def build_engine(database_url: str | None = None) -> Engine:
     down" has its own fallback; a dropped DB connection does not — this is
     the workflow's own state, not optional history) is detected and
     recycled rather than surfacing as a confusing mid-call error.
+
+    An in-memory SQLite URL gets `StaticPool` (one single connection
+    shared by every checkout) rather than SQLAlchemy's default per-thread
+    pooling for `:memory:` databases. Without it, a caller that creates
+    tables on one thread (e.g. a FastAPI app's startup lifespan, which
+    `TestClient` runs on a different thread than the test itself) and then
+    reads/writes from another thread gets handed a second, separate,
+    empty in-memory database — "no such table" even though `create_all`
+    already ran. A file-based SQLite path or Postgres URL is unaffected
+    (each connection there reads the same durable store already).
     """
     url = database_url or os.environ.get("DATABASE_URL") or _DEFAULT_DATABASE_URL
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+    is_sqlite_memory = url.startswith("sqlite") and ":memory:" in url
+    connect_args: dict[str, object] = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    kwargs: dict[str, object] = {"pool_pre_ping": True, "connect_args": connect_args}
+    if is_sqlite_memory:
+        kwargs["poolclass"] = StaticPool
+    return create_engine(url, **kwargs)
 
 
 def build_session_factory(engine: Engine) -> sessionmaker[Session]:

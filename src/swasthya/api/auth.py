@@ -10,8 +10,11 @@ Two dependencies are exposed:
   variadic factory covers both without a second dependency.
 
 `AUTH_DISABLED=true` bypasses all JWT handling and treats every caller as
-role `admin` -- an opt-in dev/offline escape hatch, loudly logged at
-startup (see `app.py`'s lifespan), never the default.
+having every role (`admin`, `doctor`, `nurse`) -- an opt-in dev/offline
+escape hatch, loudly logged at startup (see `app.py`'s lifespan), never
+the default. It grants every role, not just `admin`, because the point of
+disabling auth for local work is that nothing is gated -- a bypass that
+still 403s a `doctor`-only route would defeat its own purpose.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from typing import Any
 
 import httpx
 import structlog
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -119,21 +122,9 @@ async def _decode_token(token: str) -> dict[str, Any]:
             ) from exc
 
 
-async def get_current_roles(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-) -> set[str]:
-    """Any authenticated caller. Returns the realm roles from
-    `realm_access.roles` (standard Keycloak claim shape)."""
-    if _auth_disabled():
-        return {"admin"}
-
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token"
-        )
-
+async def _roles_for_token(token: str) -> set[str]:
     try:
-        claims = await _decode_token(credentials.credentials)
+        claims = await _decode_token(token)
     except HTTPException:
         raise
     except httpx.HTTPError as exc:
@@ -144,6 +135,49 @@ async def get_current_roles(
 
     roles = claims.get("realm_access", {}).get("roles", [])
     return set(roles)
+
+
+async def get_current_roles(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> set[str]:
+    """Any authenticated caller. Returns the realm roles from
+    `realm_access.roles` (standard Keycloak claim shape)."""
+    if _auth_disabled():
+        return {"admin", "doctor", "nurse"}
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token"
+        )
+
+    return await _roles_for_token(credentials.credentials)
+
+
+async def get_current_roles_sse(request: Request) -> set[str]:
+    """Same as `get_current_roles`, but also accepts the token as a
+    `?token=` query parameter.
+
+    `GET /alerts/stream` is consumed by the browser's native `EventSource`,
+    which cannot set an `Authorization` header — a query-param token is the
+    documented workaround (docs/api_contract.md's own note on this), so
+    this endpoint is the one place that fallback is honored. A header still
+    takes priority if a non-browser client sends one."""
+    if _auth_disabled():
+        return {"admin", "doctor", "nurse"}
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:]
+    else:
+        token = request.query_params.get("token", "")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing bearer token (header or ?token= query param)",
+        )
+
+    return await _roles_for_token(token)
 
 
 def require_role(*roles: str) -> Any:

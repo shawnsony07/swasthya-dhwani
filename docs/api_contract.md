@@ -106,7 +106,16 @@ illegal transition.
 `Content-Type: text/event-stream`. Implementation note (not a contract
 detail, but relevant to both sides): this polls the DB every 2 seconds
 rather than a true push — architecture.md's own documented fallback for
-loop L7 ("Dashboard polls the task endpoint"). Each event:
+loop L7 ("Dashboard polls the task endpoint").
+
+**Auth for this endpoint specifically (decided, not a TODO):** the
+browser's native `EventSource` cannot set an `Authorization` header, so
+this endpoint accepts the token either way — a normal `Authorization:
+Bearer <token>` header (any non-browser client), **or** a `?token=<token>`
+query parameter (what the dashboard must use). The dashboard connects as
+`new EventSource(`${API_BASE}/alerts/stream?token=${jwt}`)`.
+
+Each event:
 
 ```
 event: task_update

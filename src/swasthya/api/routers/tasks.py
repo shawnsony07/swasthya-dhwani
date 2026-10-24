@@ -32,8 +32,9 @@ from swasthya.api.schemas import (
     TaskDetail,
     TaskListResponse,
     TaskSummary,
+    TriageSnapshot,
 )
-from swasthya.contracts import TaskState
+from swasthya.contracts import TaskState, Tier
 from swasthya.db.models import Task
 from swasthya.workflow.exceptions import IllegalTransitionError, TaskNotFoundError
 from swasthya.workflow.weft_workflow import reject_with_reason, transition
@@ -63,7 +64,7 @@ def _to_summary(task: Task) -> TaskSummary:
     return TaskSummary(
         task_id=task.task_id,
         state=TaskState(task.state),
-        tier=task.tier,
+        tier=Tier(task.tier) if task.tier else None,
         hospital=task.hospital,
         is_time_critical=task.is_time_critical,
         created_at=task.created_at,
@@ -72,10 +73,11 @@ def _to_summary(task: Task) -> TaskSummary:
 
 
 def _to_detail(task: Task) -> TaskDetail:
+    snapshot = TriageSnapshot(**task.triage_snapshot) if task.triage_snapshot else None
     return TaskDetail(
         **_to_summary(task).model_dump(),
         patient_identifier_hash=task.patient_identifier_hash,
-        triage_snapshot=task.triage_snapshot,
+        triage_snapshot=snapshot,
     )
 
 

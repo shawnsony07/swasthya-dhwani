@@ -43,6 +43,16 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+# B008 (flake8-bugbear) flags `Depends(...)` in a default argument as a
+# risky function-call-in-default-arg pattern. That is exactly how FastAPI
+# itself documents dependency injection (`Depends(get_db)` etc.) — the
+# "mutable default" footgun B008 exists to catch doesn't apply here, since
+# FastAPI special-cases `Depends` at call time rather than evaluating it
+# once at function-definition time. Ignored so src/swasthya/api/ doesn't
+# need a `# noqa: B008` on every endpoint signature.
+ignore = ["B008"]
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
