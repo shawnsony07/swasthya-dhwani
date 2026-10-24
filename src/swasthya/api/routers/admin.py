@@ -166,3 +166,58 @@ def delete_roster_entry(
     db.delete(row)
     db.commit()
     logger.info("api.roster_entry_deleted", entry_id=entry_id)
+
+
+# ---------------------------------------------------------------------------
+# Override review (L28)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/overrides", response_model=list[dict[str, Any]])
+def list_overrides(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _roles: set[str] = Depends(require_role("admin", "doctor")),
+) -> list[dict[str, Any]]:
+    """List rejection, human handoff, and auto-escalation override events for
+    clinical review (architecture.md loop L28)."""
+    override_events = ("rejected", "auto_escalated", "human_handoff", "referral_declined")
+    stmt = (
+        select(AuditEventRow)
+        .where(AuditEventRow.event.in_(override_events))
+        .order_by(AuditEventRow.timestamp.desc())
+        .limit(limit)
+    )
+    rows = list(db.scalars(stmt))
+    return [
+        {
+            "id": r.id,
+            "task_id": r.task_id,
+            "event": r.event,
+            "actor": r.actor,
+            "timestamp": r.timestamp.isoformat(),
+            "protocol_version": r.protocol_version,
+            "detail": r.detail,
+        }
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Retention purge (L29)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/purge", response_model=PurgeRetentionResponse)
+def execute_purge(
+    body: PurgeRetentionRequest,
+    db: Session = Depends(get_db),
+    _roles: set[str] = Depends(require_role("admin")),
+) -> PurgeRetentionResponse:
+    """Execute scheduled or manual retention purge of old transcripts and audio
+    references (architecture.md loop L29)."""
+    cutoff = datetime.now(UTC) - timedelta(days=body.retention_days)
+    purged = purge_retention(db, retention_cutoff=cutoff, actor=body.actor)
+    db.commit()
+    logger.info("api.retention_purged", purged_count=purged, cutoff=cutoff.isoformat(), by=body.actor)
+    return PurgeRetentionResponse(purged_tasks=purged, cutoff=cutoff)
