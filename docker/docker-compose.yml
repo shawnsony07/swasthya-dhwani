@@ -106,6 +106,40 @@ services:
       retries: 15
       start_period: 20s
 
+  voice-agent:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "swasthya.voice.entrypoint", "start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hapi:
+        condition: service_started
+      api:
+        condition: service_started
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://swasthya:swasthya@postgres:5432/swasthya}
+      HAPI_FHIR_BASE_URL: ${HAPI_FHIR_BASE_URL:-http://hapi:8080/fhir}
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-gemini-3.1-flash-lite}
+      SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+      SARVAM_TTS_MODEL: ${SARVAM_TTS_MODEL:-bulbul:v3}
+      SARVAM_TTS_VOICE: ${SARVAM_TTS_VOICE:-priya}
+      EMERGENCY_CALL_PROVIDER: ${EMERGENCY_CALL_PROVIDER:-logging}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      DEFAULT_EMERGENCY_CONTACT: ${DEFAULT_EMERGENCY_CONTACT:-}
+
   dashboard:
     build:
       context: ../dashboard
