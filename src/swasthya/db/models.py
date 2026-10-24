@@ -101,3 +101,25 @@ class OnCallRosterEntry(Base):
     contact: Mapped[str] = mapped_column(String(128), nullable=False)
     priority_order: Mapped[int] = mapped_column(Integer, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class KillSwitchRow(Base):
+    """Single-row table holding the action gateway's kill switch state
+    (architecture.md loops L19/L34).
+
+    Must be a real DB table, not process memory: the API (where an admin
+    flips the switch from the dashboard) and the voice agent (where
+    `ActionGateway` reads it before every dispatch) are separate
+    processes. `id` is pinned to 1 — this table only ever holds one row,
+    enforced by `gateway.kill_switch.DbKillSwitchStore` always reading/
+    writing that single id rather than by a DB constraint, since a
+    CHECK-constrained singleton table is more ceremony than this needs.
+    """
+
+    __tablename__ = "kill_switch_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    changed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
