@@ -36,6 +36,7 @@ from swasthya.contracts import (
     TriageData,
     TriageResult,
 )
+from swasthya.db.kill_switch_store import DbKillSwitchStore
 from swasthya.db.models import Task
 from swasthya.db.session import build_engine, build_session_factory, create_all
 from swasthya.fhir import adapter as fhir_adapter
@@ -43,7 +44,6 @@ from swasthya.fhir.redact import hash_identifier
 from swasthya.gateway.action_gateway import ActionGateway
 from swasthya.gateway.allowlist import AllowList
 from swasthya.gateway.kill_switch import KillSwitch
-from swasthya.db.kill_switch_store import DbKillSwitchStore
 from swasthya.gateway.providers.base import EmergencyCallProvider
 from swasthya.gateway.providers.null_providers import (
     LoggingDeviceProvider,
