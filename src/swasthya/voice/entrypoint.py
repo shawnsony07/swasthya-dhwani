@@ -23,6 +23,7 @@ import structlog
 from livekit.agents import AgentSession, JobContext, WorkerOptions, cli
 from livekit.agents.llm import FallbackAdapter
 from livekit.plugins import google, sarvam
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from swasthya.contracts import (
