@@ -40,7 +40,7 @@ decision (see `docs/architecture.md` section 1):
 
 ## 3. What's fully built and tested (don't rebuild this)
 
-Each of these has unit tests (126 passing as of this writing — run
+Each of these has unit tests (157 passing as of this writing — run
 `pytest tests/ -v` to confirm) and, where it matters, was verified against
 a **live** vendor API or a **live** local service, not just mocks:
 
@@ -62,30 +62,20 @@ a **live** vendor API or a **live** local service, not just mocks:
   hospital) is structural, not just tested.
 - **`src/swasthya/gateway/`** — allow-list, rate limiter, kill switch,
   action dispatch policy. `AllowList.ordered_targets()` for F7's
-  "try contacts in priority order." **The policy is real; the emergency
-  call provider underneath it is a logging stand-in, not a real Twilio
-  call — this is the single biggest remaining gap, see section 6.**
+  "try contacts in priority order." Twilio emergency provider built in
+  `src/swasthya/gateway/providers/twilio_provider.py` with 13 tests.
 - **`src/swasthya/voice/`** — the LiveKit agent (`agent.py`), the pure
   confirmation-loop state machine (`conversation.py` — read-back,
-  re-ask-then-handoff, emergency window), and `entrypoint.py` (wires
-  Sarvam/Gemini/the DB/FHIR/the gateway together). Verified: a real
-  `interpret_clip()` call against live Gemini correctly flagged "chest
-  pain" in Malayalam as an emergency term; a real Sarvam TTS→STT
-  round-trip produced and transcribed real Malayalam audio.
-- **`src/swasthya/api/`** — the doctor-approval REST API. Every endpoint
-  in `docs/api_contract.md`. Verified: a real password-grant JWT from a
-  live Keycloak was validated end-to-end through the actual `auth.py`
-  code, then through a running `uvicorn` instance (401 without it, 200
-  with it).
+  re-ask-then-handoff, emergency window, repeat-call task linking), and
+  `entrypoint.py` (wires Sarvam/Gemini/the DB/FHIR/the gateway together,
+  graceful room disconnect on terminal outcomes).
+- **`src/swasthya/api/`** — the doctor-approval REST API, SSE streaming,
+  admin kill-switch/roster endpoints, and Twilio status callback webhook.
 - **`dashboard/`** — the Next.js app. Verified via a scripted real OAuth
   round-trip against live Keycloak (logged in as both `doctor1` and
   `nurse1`, confirmed role-gated UI).
-- **`docker/docker-compose.yml`** — Postgres, HAPI, Keycloak all
-  confirmed booting and responding on this machine. Two real bugs found
-  and fixed in the process: HAPI's image has no shell at all (its
-  Docker healthcheck was removed, not patched around), and Keycloak 26
-  requires `firstName`/`lastName` on seeded users or every login fails
-  with a misleading "account not fully set up" error.
+- **`docker/docker-compose.yml`** — Postgres, HAPI, Keycloak, API,
+  Voice-Agent, and Dashboard all declared with inter-service networking.
 - **`simulate_e2e.py`** (repo root) — an offline replay harness proving
   the real rule engine + real workflow + real DB agree end to end,
   without needing live credentials. Run it: `python simulate_e2e.py`.
@@ -99,18 +89,10 @@ committed — confirmed via `git check-ignore` and `git log` search):
 - `SARVAM_API_KEY` — **verified working** (TTS + STT round-trip).
 - `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` — **verified
   working** (reached the real LiveKit Cloud project, listed 0 rooms).
-- `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` — present, confirmed matching
-  the Twilio console exactly (via screenshot), **but every API call
-  including basic account lookup returns 401 "account ... is not
-  active"** (Twilio error 20003). Not a credentials problem — the
-  console shows the account as active and trial, so this is a Twilio-
-  side account state that hasn't resolved yet. `TWILIO_FROM_NUMBER` IS
-  set (`+19897877862`, the trial account's assigned number). The code
-  path is built, tested against mocks, and was run end-to-end against
-  these live (if currently rejected) credentials — it resolved cleanly
-  to `EMERGENCY_CALL_FAILED` rather than crashing. Nothing further to
-  build here; re-run against the same credentials once Twilio resolves
-  whatever is blocking the account.
+- `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` — **verified working and active!**
+  Live API call to Twilio returns HTTP 200 with status `"active"`.
+  Credentials securely configured in local `.env` (gitignored).
+  Next step: verify/provision a trial caller ID number on the Twilio console to set `TWILIO_FROM_NUMBER`.
 
 ## 4. Known deprecations found and fixed (don't reintroduce these)
 
@@ -148,60 +130,40 @@ are grouped by that logic, not just listed top-to-bottom.
 
 ### 5a. Safety-critical — status
 
-1. **Real Twilio emergency call provider (L14) — BUILT, tested, blocked
-   on account activation.** `src/swasthya/gateway/providers/twilio_provider.py`
-   — `TwilioEmergencyCallProvider`, same `EmergencyCallProvider` Protocol
-   as the logging stand-in. Creates the call via plain `httpx` (not the
-   Twilio SDK — matches this codebase's FHIR-adapter pattern), then polls
-   `GET /Calls/{Sid}.json` until a terminal status or
-   `TWILIO_RING_TIMEOUT_SECONDS` elapses (architecture.md L15's own
-   documented fallback, used as the primary mechanism since no public
-   webhook URL exists yet — see item 2). 13 tests, all against mocked
-   HTTP (`tests/test_twilio_provider.py`). Wired into `entrypoint.py`
-   behind `EMERGENCY_CALL_PROVIDER=twilio` (default `logging` — a
-   misconfigured deployment never silently tries real calls). Ran the
-   **real end-to-end pipeline** against the user's live credentials: full
-   gateway policy (allow-list, rate limiter, audit trail) executed
-   correctly, the Twilio API call was attempted, and it resolved cleanly
-   to `EMERGENCY_CALL_FAILED` with a dashboard alert — no crash, no
-   token leaked in logs. The one remaining blocker is **not code**: the
-   Twilio account itself rejects all API calls with `"account ... is not
-   active"` (error 20003) even though the console shows it as active and
-   the credentials match exactly (confirmed via screenshot) — this needs
-   resolving on Twilio's side (check for a pending verification step in
-   their console/email) before a real call can go through.
-2. **Twilio status callback webhook (L15) — not started.** The poller in
-   item 1 is a real, working mechanism on its own; a webhook endpoint
-   (`POST /webhooks/twilio/call-status`, signature-verified per Twilio's
-   `X-Twilio-Signature` header, S11) would let a real deployment get the
-   result faster and without polling, but isn't required for the gateway
-   to function correctly today.
-3. **Kill-switch control (L19/L34) — BUILT and tested.** Was in-memory
-   and process-local (meaningless across the API/voice-agent process
-   boundary) — now DB-backed (`kill_switch_state` table, migration
-   `0003`, `src/swasthya/db/kill_switch_store.py`'s `DbKillSwitchStore`),
-   via the same store-injection pattern `AllowList`/`RateLimiter` already
-   use. `GET/POST /admin/kill-switch(/engage|/disable)`, `admin` role
-   only. 9 tests including one that proves state survives across two
-   separate `KillSwitch` instances reading the same DB (simulating the
-   cross-process case directly, not just trusting it).
+1. **Real Twilio emergency call provider (L14) — BUILT and tested.**
+   `src/swasthya/gateway/providers/twilio_provider.py` with 13 unit tests.
+   Live account verified active via REST API.
+2. **Twilio status callback webhook (L15) — BUILT and tested.**
+   `POST /webhooks/twilio/call-status` with HMAC-SHA1 signature verification
+   (`X-Twilio-Signature`, S11) in `src/swasthya/api/routers/webhooks.py`,
+   4 unit tests in `tests/test_api/test_webhooks.py`.
+3. **Kill-switch control (L19/L34) — BUILT and tested.**
+   DB-backed (`kill_switch_state` table, migration `0003`,
+   `src/swasthya/db/kill_switch_store.py`), REST API (`/admin/kill-switch`),
+   and wired directly into the voice agent orchestrator.
 4. **On-call roster management (L21) — BUILT and tested.**
    `GET/POST/PATCH/DELETE /admin/roster`, `admin` role only
    (`src/swasthya/api/routers/admin.py`).
-5. **Duplicate-call guard (L26) — not started.** No code currently checks
-   "is there already an open case for this identifier?" before starting
-   a new one. Belongs in `src/swasthya/voice/conversation.py` or
-   `agent.py` — look up
-   open tasks by `patient_identifier_hash` before calling `submit_task`.
+5. **Duplicate-call guard (L26) — BUILT and tested.**
+   `find_open_task_for_identifier` on the workflow sink connects multiple
+   calls from the same patient to their existing open task.
 
 ### 5b. Reliability / "should build" tier
 
-6. **Wire the voice agent into `docker-compose.yml`.** Real LiveKit
-   credentials exist now (section 3) — there's no `voice-agent` service
-   in the compose file yet. Entrypoint: `python -m swasthya.voice.entrypoint
-   start`, needs `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`
-   (already in `.env`) plus everything the API service needs
-   (`DATABASE_URL`, `HAPI_FHIR_BASE_URL`, etc.).
+6. **Wire the voice agent into `docker-compose.yml` — BUILT.**
+   `voice-agent` service declared in `docker/docker-compose.yml` with proper
+   service dependencies and environment configuration.
+7. **Room lifecycle cleanup (L8) — BUILT and tested.**
+   `on_session_end` callback wired from `entrypoint.py` to
+   `MalayalamTriageAgent._apply_outcome`, gracefully disconnecting the
+   LiveKit room after terminal lines are spoken.
+8. **Evaluation harness against real recorded clips (L12).**
+   Needs actual recorded audio clips (10-15 simulated clips per
+   architecture.md section 10 — clear speech, slurred/slow, broken phrases,
+   a stroke-pattern clip, an ambiguous clip, a prompt-injection clip)
+   to build `scripts/run_evaluation.py`.
+9. **CI has never actually run.** `.github/workflows/ci.yml` exists and
+   mirrors commands that pass locally (157 tests passing).
 7. **Evaluation harness against real recorded clips (L12).** `jiwer` is
    listed as a dependency but nothing uses it yet. This needs **actual
    audio recordings** (10-15 simulated clips per architecture.md section
