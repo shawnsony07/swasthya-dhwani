@@ -55,7 +55,7 @@ def _keycloak_base_url() -> str:
 
 
 def _jwks_url() -> str:
-    return f"{_keycloak_base_url()}/realms/{_KEYCLOAK_REALM}/protocol/openid-connect/certs"
+    return f"{_keycloak_base_url()}/realms/{_keycloak_realm()}/protocol/openid-connect/certs"
 
 
 async def _fetch_jwks() -> dict[str, Any]:
