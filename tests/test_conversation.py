@@ -393,9 +393,10 @@ async def test_fhir_outage_on_record_triage_does_not_block_human_handoff():
 
     assert outcome.kind == ConversationOutcomeKind.HUMAN_HANDOFF
     assert outcome.fhir_write_failed is True
-    assert sink.calls[0][0] == "submit_task"
-    assert sink.calls[1][0] == "save_triage_snapshot"
-    assert sink.calls[2][0] == "mark_human_handoff"
+    assert sink.calls[0][0] == "find_open_task_for_identifier"
+    assert sink.calls[1][0] == "submit_task"
+    assert sink.calls[2][0] == "save_triage_snapshot"
+    assert sink.calls[3][0] == "mark_human_handoff"
 
 
 async def test_fhir_outage_on_record_referral_still_returns_referral_ready():
