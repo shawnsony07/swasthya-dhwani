@@ -14,31 +14,214 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 px-4 text-center">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">
-          Swasthya-Dhwani Dashboard
-        </h1>
-        <p className="mt-2 text-slate-600">
-          Sign in with your hospital account to view and approve triage alerts.
-        </p>
-      </div>
-      <form
-        action={async () => {
-          "use server";
-          await signIn("keycloak", { redirectTo: callbackUrl ?? "/dashboard" });
+    <main
+      style={{
+        minHeight: "calc(100vh - 120px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "2rem 1rem",
+      }}
+    >
+      <div
+        className="kpi-card"
+        style={{
+          maxWidth: "480px",
+          width: "100%",
+          padding: "2.5rem 2rem",
+          display: "flex",
+          flexDirection: "column",
+          gap: "1.75rem",
+          borderRadius: "var(--radius)",
+          background: "var(--bg-1)",
+          border: "1px solid var(--line-strong)",
+          boxShadow: "0 24px 48px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(233, 180, 76, 0.12)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <button
-          type="submit"
-          className="rounded-md bg-blue-600 px-6 py-3 text-base font-semibold text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-800"
+        {/* Top accent line */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "3px",
+            background: "linear-gradient(90deg, var(--brass), var(--tb), var(--info))",
+          }}
+        />
+
+        {/* Header */}
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.25rem 0.75rem",
+              borderRadius: "999px",
+              background: "rgba(233, 180, 76, 0.1)",
+              border: "1px solid rgba(233, 180, 76, 0.3)",
+              color: "var(--brass)",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              fontFamily: "var(--font-mono)",
+              marginBottom: "1rem",
+            }}
+          >
+            <span
+              style={{
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: "var(--brass)",
+                boxShadow: "0 0 8px var(--brass)",
+              }}
+            />
+            Hospital Identity Gateway · OIDC
+          </div>
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "1.75rem",
+              fontWeight: 700,
+              color: "var(--text)",
+              letterSpacing: "-0.02em",
+              margin: 0,
+            }}
+          >
+            Swasthya-Dhwani
+          </h1>
+          <p
+            style={{
+              fontSize: "0.875rem",
+              color: "var(--muted)",
+              marginTop: "0.5rem",
+              marginBottom: 0,
+            }}
+          >
+            Clinician Triage &amp; Emergency Routing Console
+          </p>
+        </div>
+
+        {/* Action Button */}
+        <form
+          action={async () => {
+            "use server";
+            await signIn("keycloak", { redirectTo: callbackUrl ?? "/dashboard" });
+          }}
+          style={{ width: "100%" }}
         >
-          Sign in with Keycloak
-        </button>
-      </form>
-      <p className="max-w-md text-xs text-slate-400">
-        Synthetic / demo data — not a real clinical tool.
-      </p>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{
+              width: "100%",
+              justifyContent: "center",
+              padding: "0.85rem 1.5rem",
+              fontSize: "0.95rem",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            Sign In with Keycloak SSO
+          </button>
+        </form>
+
+        {/* Demo Credentials Box */}
+        <div
+          style={{
+            background: "var(--bg-2)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-sm)",
+            padding: "1rem",
+            fontSize: "0.8rem",
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 600,
+              color: "var(--text-dim)",
+              marginBottom: "0.5rem",
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.4rem",
+            }}
+          >
+            <span style={{ color: "var(--tb)" }}>🔑</span> Pre-seeded Demo Accounts
+          </div>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              fontFamily: "var(--font-mono)",
+              fontSize: "0.75rem",
+            }}
+          >
+            <tbody>
+              <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                <td style={{ padding: "0.4rem 0", color: "var(--text)" }}>doctor1</td>
+                <td style={{ padding: "0.4rem 0", color: "var(--muted)" }}>doctor1pass</td>
+                <td style={{ padding: "0.4rem 0", color: "var(--ta)", textAlign: "right" }}>Doctor</td>
+              </tr>
+              <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                <td style={{ padding: "0.4rem 0", color: "var(--text)" }}>admin1</td>
+                <td style={{ padding: "0.4rem 0", color: "var(--muted)" }}>admin1pass</td>
+                <td style={{ padding: "0.4rem 0", color: "var(--brass)", textAlign: "right" }}>Admin</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "0.4rem 0", color: "var(--text)" }}>nurse1</td>
+                <td style={{ padding: "0.4rem 0", color: "var(--muted)" }}>nurse1pass</td>
+                <td style={{ padding: "0.4rem 0", color: "var(--info)", textAlign: "right" }}>Nurse</td>
+              </tr>
+            </tbody>
+          </table>
+          <p
+            style={{
+              marginTop: "0.6rem",
+              marginBottom: 0,
+              fontSize: "0.7rem",
+              color: "var(--muted)",
+              lineHeight: 1.4,
+            }}
+          >
+            Logging in with <strong>doctor1</strong> enables real-time approve/reject clinical triage actions.
+          </p>
+        </div>
+
+        {/* Disclaimer footer */}
+        <p
+          style={{
+            margin: 0,
+            fontSize: "0.72rem",
+            color: "var(--muted)",
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
+          Synthetic Kerala Emergency Demo Dataset · Not for clinical deployment
+        </p>
+      </div>
     </main>
   );
 }
