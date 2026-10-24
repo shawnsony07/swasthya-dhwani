@@ -43,6 +43,7 @@ from swasthya.fhir.redact import hash_identifier
 from swasthya.gateway.action_gateway import ActionGateway
 from swasthya.gateway.allowlist import AllowList
 from swasthya.gateway.kill_switch import KillSwitch
+from swasthya.db.kill_switch_store import DbKillSwitchStore
 from swasthya.gateway.providers.base import EmergencyCallProvider
 from swasthya.gateway.providers.null_providers import (
     LoggingDeviceProvider,
