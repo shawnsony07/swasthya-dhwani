@@ -18,8 +18,8 @@
       "protocol": "openid-connect",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
-      "redirectUris": ["http://localhost:3000/*"],
-      "webOrigins": ["http://localhost:3000"],
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:3001/*", "https://*"],
+      "webOrigins": ["+"],
       "defaultClientScopes": ["profile", "email", "roles"]
     }
   ],

@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
 import { auth, signIn } from "@/auth";
 
 export default async function LoginPage({
@@ -54,6 +56,28 @@ export default async function LoginPage({
 
         {/* Header */}
         <div style={{ textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "1.25rem" }}>
+            <div
+              style={{
+                width: "88px",
+                height: "88px",
+                borderRadius: "22px",
+                overflow: "hidden",
+                border: "2px solid rgba(19, 194, 194, 0.45)",
+                boxShadow: "0 0 32px rgba(19, 194, 194, 0.3), 0 12px 24px rgba(0, 0, 0, 0.6)",
+                background: "#000",
+              }}
+            >
+              <Image
+                src="/logo.png"
+                alt="Swasthya Dhwani Emblem"
+                width={88}
+                height={88}
+                priority
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            </div>
+          </div>
           <div
             style={{
               display: "inline-flex",
@@ -144,6 +168,42 @@ export default async function LoginPage({
             Sign In with Keycloak SSO
           </button>
         </form>
+
+        {/* Patient Voice Triage Portal Direct Access */}
+        <div
+          style={{
+            background: "rgba(19, 194, 194, 0.08)",
+            border: "1px solid rgba(19, 194, 194, 0.28)",
+            borderRadius: "var(--radius-sm)",
+            padding: "0.9rem 1rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text)" }}>
+              🎙️ രോഗികളുടെ വോയ്സ് ട്രയാജ്
+            </div>
+            <div style={{ fontSize: "0.74rem", color: "var(--muted)", marginTop: 2 }}>
+              Patient Voice Triage (No Login Required)
+            </div>
+          </div>
+          <Link
+            href="/patient"
+            className="btn btn-sm"
+            style={{
+              background: "var(--tb)",
+              color: "#041414",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              border: "none",
+            }}
+          >
+            Open Dialer →
+          </Link>
+        </div>
 
         {/* Demo Credentials Box */}
         <div

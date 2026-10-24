@@ -27,9 +27,10 @@ roadmap tiers, not promised here.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncIterable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 import structlog
 from livekit import rtc
@@ -61,6 +62,13 @@ _SLOT_ORDER: tuple[FactKey, ...] = (
     FactKey.WARNING_SIGNS,
     FactKey.DURATION,
 )
+
+_SLOT_PROMPTS_ML: dict[FactKey, str] = {
+    FactKey.IDENTIFIER: "നിങ്ങളുടെ പേരോ തിരിച്ചറിയൽ നമ്പറോ പറയാമോ?",
+    FactKey.SYMPTOMS: "ശരി. നിങ്ങൾക്ക് ഇപ്പോൾ എന്തൊക്കെ ബുദ്ധിമുട്ടുകൾ അല്ലെങ്കിൽ ലക്ഷണങ്ങളാണ് ഉള്ളത്?",
+    FactKey.WARNING_SIGNS: "മനസ്സിലായി. നെഞ്ചുവേദന, ശ്വാസതടസ്സം, പെട്ടെന്നുള്ള തളർച്ച തുടങ്ങിയ അപായ ലക്ഷണങ്ങൾ ഉണ്ടോ?",
+    FactKey.DURATION: "ഈ ലക്ഷണങ്ങൾ തുടങ്ങിയിട്ട് എത്ര സമയമായി?",
+}
 
 _OPENING_LINE = (
     "ഇത് ഒരു ട്രയാജ് പിന്തുണയാണ്, രോഗനിർണയം അല്ല. "  # triage support, not diagnosis
@@ -103,6 +111,7 @@ class MalayalamTriageAgent(Agent):
         self,
         orchestrator: ConversationOrchestrator,
         *,
+        room: rtc.Room | None = None,
         on_session_end: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         super().__init__(
@@ -117,17 +126,62 @@ class MalayalamTriageAgent(Agent):
             ),
         )
         self._orchestrator = orchestrator
+        self._room = room
         self._on_session_end = on_session_end
         self._state = ConversationState()
         self._audio_buffer = TurnAudioBuffer()
         self._confidence_high, self._confidence_low = _confidence_thresholds()
-        self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+        self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
         self._interpreter_api_key = os.environ.get("GEMINI_API_KEY", "")
         # Set while the 5-second emergency confirmation window (F4) is
         # open; the next turn to arrive cancels it. If nothing arrives,
         # the task itself fires the default-to-escalate path (see
         # `_start_emergency_window`).
         self._emergency_task: asyncio.Task[None] | None = None
+        self._is_agent_speaking: bool = False
+        self._mute_stt_until: float = 0.0
+        self._last_spoken_line: str = ""
+
+    async def _set_speaking_state(self, is_speaking: bool, text: str = "") -> None:
+        self._is_agent_speaking = is_speaking
+        if is_speaking and text:
+            self._last_spoken_line = text.strip()
+            # Malayalam speech rate in Sarvam Bulbul:v3 is ~10-12 chars/sec
+            duration = max(3.5, len(text) * 0.12) + 0.8
+            self._mute_stt_until = asyncio.get_event_loop().time() + duration
+            logger.info("voice.agent_speaking_started", text_len=len(text), mute_duration=round(duration, 2))
+
+            async def _auto_unmute(wait_s: float) -> None:
+                await asyncio.sleep(wait_s)
+                if self._is_agent_speaking:
+                    await self._set_speaking_state(is_speaking=False)
+
+            asyncio.create_task(_auto_unmute(duration))
+
+        if self._room and self._room.local_participant:
+            try:
+                state_data = json.dumps({
+                    "type": "agent_state",
+                    "state": "speaking" if is_speaking else "listening",
+                }).encode("utf-8")
+                await self._room.local_participant.publish_data(state_data, reliable=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("voice.publish_agent_state_failed", error=str(exc))
+
+    async def speak_opening(self) -> None:
+        """Speaks the triage opening disclaimer and question in Malayalam."""
+        logger.info("voice.speaking_opening_line")
+        await self._set_speaking_state(True, text=_OPENING_LINE)
+        try:
+            self.session.say(_OPENING_LINE, add_to_chat_ctx=False)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("voice.speak_opening_failed", error=str(exc))
+        if self._room and self._room.local_participant:
+            try:
+                data = json.dumps({"type": "transcript", "sender": "agent", "text": _OPENING_LINE}).encode("utf-8")
+                await self._room.local_participant.publish_data(data, reliable=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("voice.publish_opening_failed", error=str(exc))
 
     # -- audio tee --------------------------------------------------------
 
@@ -136,10 +190,18 @@ class MalayalamTriageAgent(Agent):
     ) -> AsyncGenerator[stt.SpeechEvent, None]:
         async def _tee() -> AsyncIterable[rtc.AudioFrame]:
             async for frame in audio:
+                now = asyncio.get_event_loop().time()
+                if self._is_agent_speaking or now < self._mute_stt_until:
+                    # Drop audio frames while agent's TTS is active (prevents acoustic feedback / self-hearing)
+                    continue
                 self._audio_buffer.push(frame)
                 yield frame
 
         async for event in Agent.default.stt_node(self, _tee(), model_settings):
+            now = asyncio.get_event_loop().time()
+            if self._is_agent_speaking or now < self._mute_stt_until:
+                # Discard speech events detected while the agent was speaking
+                continue
             if event.type == stt.SpeechEventType.START_OF_SPEECH:
                 # A fresh turn starts: drop anything left over from a turn
                 # that never produced a final transcript (e.g. the caller
@@ -152,8 +214,29 @@ class MalayalamTriageAgent(Agent):
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
+        now = asyncio.get_event_loop().time()
+        if self._is_agent_speaking or now < self._mute_stt_until:
+            logger.info("voice.dropped_echo_during_agent_speech")
+            self._audio_buffer.snapshot_and_clear()
+            raise StopResponse
+
         transcript = new_message.text_content or ""
         audio_clip = self._audio_buffer.snapshot_and_clear()
+
+        # Echo filter: if transcript matches or is contained in the last spoken agent prompt, reject it
+        cleaned_transcript = transcript.strip().lower()
+        if self._last_spoken_line and cleaned_transcript:
+            cleaned_spoken = self._last_spoken_line.lower()
+            if cleaned_transcript in cleaned_spoken or cleaned_spoken in cleaned_transcript:
+                logger.warning("voice.dropped_transcript_matching_agent_prompt", transcript=cleaned_transcript)
+                raise StopResponse
+
+        if transcript.strip() and self._room and self._room.local_participant:
+            try:
+                data = json.dumps({"type": "transcript", "sender": "patient", "text": transcript.strip()}).encode("utf-8")
+                asyncio.create_task(self._room.local_participant.publish_data(data, reliable=True))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("voice.publish_user_transcript_failed", error=str(exc))
 
         if self._emergency_task is not None:
             # Any turn arriving while the 5-second window is open resolves
@@ -259,8 +342,42 @@ class MalayalamTriageAgent(Agent):
         )
 
     async def _apply_outcome(self, outcome: ConversationOutcome) -> None:
-        if outcome.speak_text:
-            self.session.say(outcome.speak_text, add_to_chat_ctx=False)
+        text_to_speak = outcome.speak_text
+        if outcome.kind is ConversationOutcomeKind.REFERRAL_READY:
+            tier_val = outcome.tier.value if outcome.tier else ""
+            text_to_speak = (
+                f"നിങ്ങളുടെ വിവരങ്ങൾ വിജയകരമായി രേഖപ്പെടുത്തിയിട്ടുണ്ട്. "
+                f"ട്രയാജ് മുൻഗണന: {tier_val}. ഡോക്ടറുടെ അനുമതിക്കായി അയച്ചിരിക്കുന്നു. നന്ദി."
+            )
+        elif outcome.kind is ConversationOutcomeKind.HUMAN_HANDOFF:
+            text_to_speak = (
+                "നിങ്ങളുടെ സംസാരം വ്യക്തമായി മനസ്സിലാക്കാൻ സാധിച്ചില്ല. "
+                "കൂടുതൽ സഹായത്തിനായി ഒരു ആരോഗ്യ പ്രവർത്തകനിലേക്ക് ഈ കോൾ മാറ്റുന്നു."
+            )
+        elif outcome.kind is ConversationOutcomeKind.SAY_REASK:
+            text_to_speak = "ക്ഷമിക്കണം, നിങ്ങൾ പറഞ്ഞത് വ്യക്തമായില്ല. ദയവായി ഒന്നുകൂടി പറയാമോ?"
+        elif outcome.kind is ConversationOutcomeKind.SAY_EMERGENCY_WINDOW:
+            text_to_speak = (
+                "ഇതൊരു അടിയന്തര സാഹചര്യമായി തോന്നുന്നു. "
+                "ആംബുലൻസ് ആവശ്യമുണ്ടെങ്കിൽ ദയവായി അഞ്ച് സെക്കൻഡിനുള്ളിൽ പറയുക."
+            )
+        elif outcome.kind is ConversationOutcomeKind.SAY_ONE_SHOT_SUMMARY:
+            next_slot = next((k for k in _SLOT_ORDER if k not in self._state.confirmed_facts), None)
+            if next_slot and next_slot in _SLOT_PROMPTS_ML:
+                text_to_speak = _SLOT_PROMPTS_ML[next_slot]
+
+        if text_to_speak:
+            await self._set_speaking_state(True, text=text_to_speak)
+            try:
+                self.session.say(text_to_speak, add_to_chat_ctx=False)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("voice.say_failed", error=str(exc))
+            if self._room and self._room.local_participant:
+                try:
+                    data = json.dumps({"type": "transcript", "sender": "agent", "text": text_to_speak}).encode("utf-8")
+                    asyncio.create_task(self._room.local_participant.publish_data(data, reliable=True))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("voice.publish_agent_transcript_failed", error=str(exc))
 
         if outcome.kind is ConversationOutcomeKind.HUMAN_HANDOFF:
             logger.warning("voice.human_handoff", task_id=outcome.task_id, reason=outcome.reason)
@@ -282,8 +399,8 @@ class MalayalamTriageAgent(Agent):
         }
         if outcome.kind in terminal_kinds and self._on_session_end is not None:
             async def _delayed_end() -> None:
-                # Allow 4 seconds for TTS playback to conclude before disconnecting
-                await asyncio.sleep(4.0)
+                # Allow 6 seconds for TTS playback to conclude before disconnecting
+                await asyncio.sleep(6.0)
                 try:
                     await self._on_session_end()
                 except Exception as exc:

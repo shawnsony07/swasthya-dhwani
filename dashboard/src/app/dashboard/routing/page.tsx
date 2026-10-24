@@ -4,9 +4,10 @@ import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { fetchRoutingBoard } from "@/lib/api";
-import type { RoutingBoard, RoutingEntry } from "@/lib/types";
+import type { RoutingBoard, FacilityRoute, RoutedCase } from "@/lib/types";
 import { StateBadge, TierBadge, TimeCriticalBadge } from "@/components/badges";
 import RelativeTime from "@/components/RelativeTime";
+import { formatHospitalName } from "@/lib/formatters";
 import type { Tier, TaskState } from "@/lib/types";
 
 const TIER_COLOR: Record<string, string> = {
@@ -17,114 +18,116 @@ const TIER_COLOR: Record<string, string> = {
 };
 
 /** Case chip inside a facility card */
-function CaseChip({ entry }: { entry: RoutingEntry }) {
-  const color = TIER_COLOR[entry.tier] ?? "var(--muted)";
+function CaseChip({ entry }: { entry: RoutedCase }) {
+  const color = entry.tier ? TIER_COLOR[entry.tier] ?? "var(--muted)" : "var(--muted)";
   return (
     <Link
       href={`/dashboard/${encodeURIComponent(entry.task_id)}`}
       className="case-chip"
       style={{ borderLeftColor: color }}
       aria-label={`Case ${entry.task_id}, ${entry.state}${entry.is_time_critical ? ", critical" : ""}`}
-      title={`${entry.state} — ${entry.is_time_critical ? "TIME CRITICAL" : "routine"}`}
+      title={`${entry.state} · ${entry.is_time_critical ? "TIME CRITICAL" : "Routine"}`}
     >
-      {entry.task_id}
+      <span className="mono" style={{ fontWeight: 600 }}>{entry.task_id}</span>
       {entry.is_time_critical && <span aria-hidden="true"> 🛑</span>}
     </Link>
   );
 }
 
-/** Individual facility card */
-function FacilityCard({
-  name,
-  entries,
-}: {
-  name: string;
-  entries: RoutingEntry[];
-}) {
-  const criticalCount = entries.filter((e) => e.is_time_critical).length;
-  const pendingCount = entries.filter((e) =>
-    ["awaiting_approval", "auto_escalated", "human_handoff"].includes(e.state)
+/** Individual hospital / facility card */
+function FacilityCard({ facility }: { facility: FacilityRoute }) {
+  const criticalCount = facility.cases.filter((c) => c.is_time_critical).length;
+  const pendingCount = facility.cases.filter((c) =>
+    ["awaiting_approval", "auto_escalated", "human_handoff"].includes(c.state)
   ).length;
-
-  // Group by tier for the mini summary
-  const byTier = entries.reduce<Record<string, number>>((acc, e) => {
-    acc[e.tier] = (acc[e.tier] ?? 0) + 1;
-    return acc;
-  }, {});
+  const pct = facility.total > 0 ? Math.min(100, Math.round((facility.open / facility.total) * 100)) : 0;
+  const barColor = pct >= 80 ? "var(--c1)" : pct >= 50 ? "var(--c2)" : "var(--ok)";
 
   return (
-    <div className="facility" style={{ position: "relative" }}>
+    <div className="facility-card">
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-        <span className="facility-name">{name}</span>
-        <div style={{ display: "flex", gap: 6 }}>
+      <div className="facility-card-header">
+        <div>
+          <h3 className="facility-card-title">
+            <span aria-hidden="true" style={{ fontSize: 18 }}>🏥</span>
+            <span>{formatHospitalName(facility.hospital)}</span>
+          </h3>
+          <span className="mono" style={{ fontSize: 11, color: "var(--muted)", display: "block", marginTop: 2 }}>
+            ID: {facility.hospital}
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
           {criticalCount > 0 && (
-            <span className="badge crit" style={{ fontSize: 11 }}>
-              🛑 {criticalCount} critical
+            <span className="badge crit" style={{ fontSize: 11.5 }}>
+              🛑 {criticalCount} Critical
             </span>
           )}
           {pendingCount > 0 && (
-            <span className="badge st-awaiting_approval" style={{ fontSize: 11 }}>
-              ⏳ {pendingCount} pending
+            <span className="badge st-awaiting_approval" style={{ fontSize: 11.5 }}>
+              ⏳ {pendingCount} Pending
             </span>
           )}
         </div>
       </div>
 
-      {/* Tier mini-summary */}
-      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        {Object.entries(byTier).map(([tier, count]) => (
-          <span
-            key={tier}
-            style={{ fontSize: 11, color: TIER_COLOR[tier] ?? "var(--muted)", fontWeight: 700 }}
-          >
-            {count}× T{tier}
+      {/* Facility Load Metrics */}
+      <div className="facility-stats-row">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>Active Load:</span>
+            <strong style={{ color: "var(--text)", fontSize: 13 }}>{facility.open} open</strong>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>/ {facility.total} total</span>
+          </div>
+          <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: barColor }}>
+            {pct}%
           </span>
-        ))}
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>
-          {entries.length} case{entries.length !== 1 ? "s" : ""}
-        </span>
+        </div>
+        <div className="facility-load-bar-wrap">
+          <div className="facility-load-bar">
+            <i style={{ width: `${pct}%`, background: barColor }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+          {Object.entries(facility.by_tier).map(([tier, count]) => (
+            <span
+              key={tier}
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: TIER_COLOR[tier] ?? "var(--muted)",
+                background: "rgba(255, 255, 255, 0.04)",
+                padding: "2px 8px",
+                borderRadius: 4,
+                border: "1px solid var(--line)",
+                fontWeight: 700,
+              }}
+            >
+              {count}× Tier {tier}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* Case chips */}
-      <div className="facility-cases">
-        {entries.map((e) => (
-          <CaseChip key={e.task_id} entry={e} />
-        ))}
+      {/* Case Chips */}
+      <div>
+        <p style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 10, fontWeight: 700 }}>
+          Assigned Cases ({facility.cases.length})
+        </p>
+        {facility.cases.length === 0 ? (
+          <p style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>
+            No active cases routed to this facility.
+          </p>
+        ) : (
+          <div className="facility-cases-chips">
+            {facility.cases.map((c) => (
+              <CaseChip key={c.task_id} entry={c} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-/** Flat routing list row */
-function RoutingRow({ entry }: { entry: RoutingEntry }) {
-  return (
-    <tr>
-      <td>
-        <Link
-          href={`/dashboard/${encodeURIComponent(entry.task_id)}`}
-          className="mono"
-          style={{ color: "var(--brass)", fontSize: 12, fontWeight: 700, textDecoration: "none" }}
-        >
-          {entry.task_id}
-        </Link>
-      </td>
-      <td><TierBadge tier={entry.tier as Tier | null} /></td>
-      <td><StateBadge state={entry.state as TaskState} /></td>
-      <td className="mono" style={{ fontSize: 12 }}>{entry.hospital}</td>
-      <td>
-        {entry.is_time_critical ? <TimeCriticalBadge /> : (
-          <span style={{ color: "var(--muted)", fontSize: 12 }}>Routine</span>
-        )}
-      </td>
-      <td style={{ fontSize: 12, color: "var(--muted)" }}>
-        <RelativeTime iso={entry.updated_at} />
-      </td>
-    </tr>
-  );
-}
-
-type ViewMode = "grid" | "list";
 
 export default function RoutingBoardPage() {
   const { data: session } = useSession();
@@ -132,7 +135,7 @@ export default function RoutingBoardPage() {
   const [board, setBoard] = useState<RoutingBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<ViewMode>("grid");
+  const [view, setView] = useState<"grid" | "list">("grid");
 
   const load = useCallback(async () => {
     try {
@@ -152,47 +155,51 @@ export default function RoutingBoardPage() {
     return () => clearInterval(id);
   }, [load]);
 
-  const facilities = board?.facilities ?? {};
-  const facilityNames = Object.keys(facilities).sort();
-  const entries = board?.entries ?? [];
-  const totalCritical = entries.filter((e) => e.is_time_critical).length;
+  const facilities = board?.facilities ?? [];
+  const allCases: Array<RoutedCase & { hospital: string }> = facilities.flatMap((f) =>
+    f.cases.map((c) => ({ ...c, hospital: f.hospital }))
+  );
+  const totalCritical = allCases.filter((c) => c.is_time_critical).length;
 
   return (
     <div className="shell">
       <div className="page">
+        {/* Page Head */}
         <div className="page-head">
           <div>
             <p className="eyebrow">Kerala Health Routing Protocol</p>
-            <h1 className="page-title">Routing Board</h1>
+            <h1 className="page-title">Facility Routing Command Board</h1>
             <p className="page-sub">
-              Patient-to-facility routing as per Government of Kerala Emergency Health Guidelines.
-              Cases are automatically tiered A→C2 by symptom acuity.
+              Deterministic emergency routing and load distribution across Kerala healthcare facilities.
             </p>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {totalCritical > 0 && (
-              <span className="badge crit badge-loud" style={{ fontSize: 13 }}>
-                🛑 {totalCritical} critical case{totalCritical !== 1 ? "s" : ""}
-              </span>
-            )}
-            <div role="group" aria-label="View mode" style={{ display: "flex", gap: 4 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
               <button
                 type="button"
-                className="btn btn-sm"
-                aria-pressed={view === "grid" ? "true" : "false"}
                 onClick={() => setView("grid")}
-                style={view === "grid" ? { background: "var(--brass)", color: "#1a1204" } : {}}
+                className="btn btn-sm"
+                style={{
+                  borderRadius: 0,
+                  border: "none",
+                  background: view === "grid" ? "var(--line-strong)" : "transparent",
+                  color: view === "grid" ? "var(--text)" : "var(--muted)",
+                }}
               >
-                ⊞ Grid
+                ⊞ Facility Grid
               </button>
               <button
                 type="button"
-                className="btn btn-sm"
-                aria-pressed={view === "list" ? "true" : "false"}
                 onClick={() => setView("list")}
-                style={view === "list" ? { background: "var(--brass)", color: "#1a1204" } : {}}
+                className="btn btn-sm"
+                style={{
+                  borderRadius: 0,
+                  border: "none",
+                  background: view === "list" ? "var(--line-strong)" : "transparent",
+                  color: view === "list" ? "var(--text)" : "var(--muted)",
+                }}
               >
-                ≡ List
+                ☰ Case List
               </button>
             </div>
             <button type="button" onClick={load} className="btn btn-sm">
@@ -201,98 +208,103 @@ export default function RoutingBoardPage() {
           </div>
         </div>
 
-        {/* Last updated */}
-        {board && (
-          <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 20 }}>
-            Board generated <RelativeTime iso={board.generated_at} /> ·{" "}
-            {entries.length} total cases across {facilityNames.length} facilities
-          </p>
+        {/* Tiers Summary Strip */}
+        {board?.tiers && (
+          <div className="grid grid-kpi" style={{ marginBottom: 24 }}>
+            {board.tiers.map((tBucket) => {
+              const color = TIER_COLOR[tBucket.tier] ?? "var(--muted)";
+              return (
+                <div key={tBucket.tier} className="kpi" style={{ borderLeft: `4px solid ${color}` }}>
+                  <div className="kpi-label" style={{ color }}>
+                    Tier {tBucket.tier} · {tBucket.referral_window}
+                  </div>
+                  <div className="kpi-value">
+                    {tBucket.count}
+                    <span className="kpi-unit">cases</span>
+                  </div>
+                  <div className="kpi-note">{tBucket.label}</div>
+                </div>
+              );
+            })}
+          </div>
         )}
 
+        {/* Main Content */}
         {loading ? (
-          <div className="grid grid-2">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="skeleton" style={{ height: 140 }} />
+          <div className="facility-grid">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="skeleton" style={{ height: 200 }} />
             ))}
           </div>
         ) : error ? (
           <div role="alert" className="alert">
             <p style={{ fontWeight: 700 }}>Could not load routing board.</p>
             <p style={{ fontSize: 13, marginTop: 4 }}>{error}</p>
-            <button type="button" onClick={load} className="btn btn-sm btn-danger" style={{ marginTop: 8 }}>
-              Try again
-            </button>
           </div>
-        ) : entries.length === 0 ? (
-          <div className="empty">No cases in the routing board yet.</div>
+        ) : facilities.length === 0 ? (
+          <div className="empty">No facility routes active in the current session.</div>
         ) : view === "grid" ? (
-          /* ── Grid view (facility cards) ── */
-          <div>
-            {/* Unrouted / pending tier */}
-            {board?.entries.filter((e) => !e.hospital).length ? (
-              <div className="panel" style={{ marginBottom: 20, borderColor: "var(--brass-dim)" }}>
-                <div className="panel-title">
-                  Unrouted / Awaiting Triage
-                  <small>{board.entries.filter((e) => !e.hospital).length} cases</small>
-                </div>
-                <div className="facility-cases">
-                  {board.entries
-                    .filter((e) => !e.hospital)
-                    .map((e) => (
-                      <CaseChip key={e.task_id} entry={e} />
-                    ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="grid grid-2">
-              {facilityNames.map((name) => (
-                <FacilityCard
-                  key={name}
-                  name={name}
-                  entries={facilities[name] ?? []}
-                />
-              ))}
-            </div>
+          <div className="facility-grid">
+            {facilities.map((fac) => (
+              <FacilityCard key={fac.hospital} facility={fac} />
+            ))}
           </div>
         ) : (
-          /* ── List view (flat table) ── */
           <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
             <table className="table">
               <thead>
                 <tr>
                   <th>Case ID</th>
-                  <th>Tier</th>
-                  <th>State</th>
-                  <th>Facility</th>
-                  <th>Priority</th>
-                  <th>Updated</th>
+                  <th>Kerala Tier</th>
+                  <th>Status</th>
+                  <th>Assigned Facility</th>
+                  <th>Urgency</th>
+                  <th>Last Updated</th>
                 </tr>
               </thead>
               <tbody>
-                {entries
-                  .slice()
-                  .sort((a, b) => {
-                    // Critical first, then by tier severity
-                    if (a.is_time_critical !== b.is_time_critical)
-                      return a.is_time_critical ? -1 : 1;
-                    const tierOrder = { C1: 0, C2: 1, B: 2, A: 3 };
-                    return (tierOrder[a.tier as Tier] ?? 9) - (tierOrder[b.tier as Tier] ?? 9);
-                  })
-                  .map((entry) => (
-                    <RoutingRow key={entry.task_id} entry={entry} />
-                  ))}
+                {allCases.map((entry) => (
+                  <tr key={entry.task_id}>
+                    <td>
+                      <Link
+                        href={`/dashboard/${encodeURIComponent(entry.task_id)}`}
+                        className="mono"
+                        style={{ color: "var(--brass)", fontSize: 12.5, fontWeight: 700, textDecoration: "none" }}
+                      >
+                        {entry.task_id}
+                      </Link>
+                    </td>
+                    <td>
+                      <TierBadge tier={entry.tier as Tier | null} />
+                    </td>
+                    <td>
+                      <StateBadge state={entry.state as TaskState} />
+                    </td>
+                    <td>
+                      <span className="case-facility-tag">
+                        <span>🏥 {formatHospitalName(entry.hospital)}</span>
+                      </span>
+                    </td>
+                    <td>
+                      {entry.is_time_critical ? (
+                        <TimeCriticalBadge />
+                      ) : (
+                        <span style={{ color: "var(--muted)", fontSize: 12 }}>Routine</span>
+                      )}
+                    </td>
+                    <td style={{ fontSize: 12, color: "var(--muted)" }} className="mono">
+                      <RelativeTime iso={entry.updated_at} />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* Kerala protocol reference */}
-        <div className="notice" style={{ marginTop: 20 }}>
-          <strong>Routing Rules (Kerala Health Guidelines):</strong>
-          &nbsp; Tier A → ASHA/PHC &nbsp;·&nbsp; Tier B → CHC or Taluk Hospital &nbsp;·&nbsp;
-          Tier C1 → District Hospital &nbsp;·&nbsp; Tier C2 → Medical College / Tertiary / Stroke Unit.
-          C2 cases with stroke flags receive instant paging to the neurology on-call team.
+        {/* Clinical Routing Guidelines Disclaimer */}
+        <div className="notice" style={{ marginTop: 22 }}>
+          <strong>Kerala Emergency Response Guidelines:</strong> Tier C1 acute cases route to certified Stroke Units or Tertiary Medical Colleges with immediate neuro-critical care. Tier C2 cases route to First Referral Units (FRUs) with cardiac care and oxygen capacity.
         </div>
       </div>
     </div>

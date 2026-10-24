@@ -76,32 +76,63 @@ export interface AuditTimeline {
   events: AuditEvent[];
 }
 
-export interface RoutingEntry {
+export interface MetricDistribution {
+  mean: number | null;
+  samples: number;
+}
+
+export interface ConfidenceBand {
+  label: string;
+  count: number;
+}
+
+export interface RoutedCase {
   task_id: string;
-  tier: string;
-  hospital: string;
-  state: string;
+  state: TaskState;
+  tier: Tier | null;
   is_time_critical: boolean;
-  created_at: string;
   updated_at: string;
 }
 
+export interface FacilityRoute {
+  hospital: string;
+  total: number;
+  open: number;
+  by_tier: Record<string, number>;
+  cases: RoutedCase[];
+}
+
+export interface TierBucket {
+  tier: Tier;
+  label: string;
+  referral_window: string;
+  count: number;
+}
+
 export interface RoutingBoard {
-  generated_at: string;
-  entries: RoutingEntry[];
-  facilities: Record<string, RoutingEntry[]>;
+  protocol_version: string;
+  clinically_signed_off: boolean;
+  tiers: TierBucket[];
+  facilities: FacilityRoute[];
+  unrouted: number;
+  total: number;
 }
 
 export interface AdminMetrics {
-  generated_at: string;
-  total_tasks: number;
+  total_cases: number;
+  open_cases: number;
+  time_critical: number;
   by_tier: Record<string, number>;
   by_state: Record<string, number>;
-  critical_cases: number;
-  pending_approval: number;
-  avg_stt_confidence: number | null;
-  avg_tts_latency_ms: number | null;
-  avg_call_duration_s: number | null;
+  auto_escalated: number;
+  human_handoff: number;
+  interpretation_confidence: MetricDistribution;
+  confidence_bands: ConfidenceBand[];
+  stt_confidence: MetricDistribution;
+  call_duration_seconds: MetricDistribution;
+  tts_ttfb_ms: MetricDistribution;
+  llm_ttft_ms: MetricDistribution;
+  decision_latency_seconds: MetricDistribution;
 }
 
 export interface ApiErrorBody {

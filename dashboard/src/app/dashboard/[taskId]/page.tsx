@@ -14,6 +14,7 @@ import {
 import { useTask } from "./useTask";
 import ApproveRejectActions from "./ApproveRejectActions";
 import { fetchAuditTimeline } from "@/lib/api";
+import { formatHospitalName } from "@/lib/formatters";
 import type { AuditTimeline, Tier } from "@/lib/types";
 
 function AuditTimelinePanel({ taskId }: { taskId: string }) {
@@ -136,7 +137,7 @@ export default function TaskDetailPage({
                   </dl>
                   <dl className="fact">
                     <dt>Facility</dt>
-                    <dd>{task.hospital ?? "Not yet assigned"}</dd>
+                    <dd>{task.hospital ? formatHospitalName(task.hospital) : "Not yet assigned"}</dd>
                   </dl>
                   <dl className="fact">
                     <dt>Created</dt>

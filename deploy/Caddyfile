@@ -1,0 +1,39 @@
+# ==============================================================================
+# Swasthya-Dhwani — Caddy Reverse Proxy & Automated SSL Configuration
+# Replace 'yourdomain.com' with your actual domain or subdomain!
+# Place this at /etc/caddy/Caddyfile on your server and run:
+#   sudo systemctl reload caddy
+# ==============================================================================
+
+# 1. Clinician Dashboard & Patient Voice Client (Next.js)
+swasthya.yourdomain.com {
+    reverse_proxy localhost:3000 {
+        # Enable streaming support for WebSockets and server-sent events
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+# 2. FastAPI Backend & SSE Live Alert Stream
+api.swasthya.yourdomain.com {
+    reverse_proxy localhost:8000 {
+        # SSE live-updates require unbuffered responses
+        flush_interval -1
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+
+# 3. Keycloak Identity & Access Management
+auth.swasthya.yourdomain.com {
+    reverse_proxy localhost:8081 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

@@ -1,5 +1,9 @@
 # Swasthya-Dhwani x FluentPath — triage spine
 
+<p align="center">
+  <img src="docs/logo.png" alt="Swasthya-Dhwani Logo" width="140" style="border-radius: 28px;" />
+</p>
+
 Malayalam voice triage service: an LLM interprets speech, but a deterministic
 rule engine over a Kerala protocol graph decides clinical acuity. Full product
 vision and the delivery plan are in [`docs/architecture.md`](docs/architecture.md).

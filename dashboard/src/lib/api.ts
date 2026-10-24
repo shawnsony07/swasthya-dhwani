@@ -70,14 +70,35 @@ export function fetchTask(
   );
 }
 
-export function fetchAuditTimeline(
+export async function fetchAuditTimeline(
   accessToken: string | undefined,
   taskId: string
 ): Promise<AuditTimeline> {
-  return request<AuditTimeline>(
+  interface RawAuditEvent {
+    id: number;
+    task_id: string;
+    event: string;
+    actor: string;
+    timestamp: string;
+    protocol_version: string;
+    model_id: string | null;
+    detail: Record<string, unknown>;
+  }
+
+  const raw = await request<RawAuditEvent[]>(
     `/tasks/${encodeURIComponent(taskId)}/audit`,
     accessToken
   );
+  const events = (Array.isArray(raw) ? raw : []).map((r, idx) => ({
+    seq: r.id ?? idx + 1,
+    actor: r.actor ?? "system",
+    action: r.event ?? "event",
+    from_state: (r.detail?.from_state as string) ?? null,
+    to_state: (r.detail?.to_state as string) ?? (r.event === "working" ? "working" : r.event === "approval_requested" ? "awaiting_approval" : null),
+    note: (r.detail?.reason as string) ?? (Object.keys(r.detail || {}).length > 0 ? JSON.stringify(r.detail) : null),
+    ts: r.timestamp ?? new Date().toISOString(),
+  }));
+  return { task_id: taskId, events };
 }
 
 export function approveTask(

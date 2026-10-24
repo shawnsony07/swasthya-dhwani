@@ -1,0 +1,138 @@
+name: swasthya
+
+# Services: postgres, hapi, keycloak, api, voice-agent, dashboard.
+#
+# Standard root compose file. To run the entire stack:
+#   docker compose up --build
+# Or detached:
+#   docker compose up -d
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-swasthya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-swasthya}
+      POSTGRES_DB: ${POSTGRES_DB:-swasthya}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-swasthya} -d ${POSTGRES_DB:-swasthya}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  hapi:
+    image: hapiproject/hapi:v7.2.0
+    restart: unless-stopped
+    environment:
+      hapi.fhir.default_encoding: json
+    ports:
+      - "8080:8080"
+    volumes:
+      - hapi-data:/app/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./docker/keycloak/swasthya-realm.json:/opt/keycloak/data/import/swasthya-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hapi:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-swasthya}:${POSTGRES_PASSWORD:-swasthya}@postgres:5432/${POSTGRES_DB:-swasthya}
+      HAPI_FHIR_BASE_URL: http://hapi:8080/fhir
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  voice-agent:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "swasthya.voice.entrypoint", "start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hapi:
+        condition: service_started
+      api:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-swasthya}:${POSTGRES_PASSWORD:-swasthya}@postgres:5432/${POSTGRES_DB:-swasthya}
+      HAPI_FHIR_BASE_URL: http://hapi:8080/fhir
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-gemini-3.1-flash-lite}
+      SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+      SARVAM_TTS_MODEL: ${SARVAM_TTS_MODEL:-bulbul:v3}
+      SARVAM_TTS_VOICE: ${SARVAM_TTS_VOICE:-priya}
+      EMERGENCY_CALL_PROVIDER: ${EMERGENCY_CALL_PROVIDER:-logging}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      DEFAULT_EMERGENCY_CONTACT: ${DEFAULT_EMERGENCY_CONTACT:-}
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: ../docker/dashboard.Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - keycloak
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-changeme-production-secret-at-least-32-chars}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:
+  hapi-data:

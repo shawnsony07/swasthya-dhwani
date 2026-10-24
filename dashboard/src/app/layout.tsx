@@ -33,6 +33,10 @@ export const metadata: Metadata = {
   title: "Swasthya-Dhwani Clinician Console",
   description:
     "Live triage operations, call telemetry and Kerala-tier routing for clinicians and administrators (synthetic/demo data)",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

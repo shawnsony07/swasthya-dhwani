@@ -15,9 +15,21 @@ tested on its own.
 from __future__ import annotations
 
 import os
+import sys
 import uuid
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
+
+import dotenv
+
+dotenv.load_dotenv()
+if not os.environ.get("GOOGLE_API_KEY") and os.environ.get("GEMINI_API_KEY"):
+    os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import structlog
 from livekit.agents import AgentSession, JobContext, WorkerOptions, cli
@@ -341,11 +353,15 @@ class _EmergencyDispatcherAdapter:
 
 
 def _build_llm() -> FallbackAdapter:
-    primary_model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
-    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite")
+    primary_model = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-flash-lite-latest")
+    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     return FallbackAdapter(
-        [google.LLM(model=primary_model), google.LLM(model=fallback_model)],
-        attempt_timeout=8.0,
+        [
+            google.LLM(model=primary_model, api_key=api_key),
+            google.LLM(model=fallback_model, api_key=api_key),
+        ],
+        attempt_timeout=15.0,
     )
 
 
@@ -397,7 +413,7 @@ async def entrypoint(ctx: JobContext) -> None:
         stt_model="sarvam",
         tts_model=os.environ.get("SARVAM_TTS_MODEL", "bulbul:v3"),
         tts_voice=os.environ.get("SARVAM_TTS_VOICE", "priya"),
-        llm_model=os.environ.get("GEMINI_MODEL", "gemini-flash-latest"),
+        llm_model=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite"),
     )
 
     def _on_metrics(ev: object) -> None:
@@ -423,10 +439,11 @@ async def entrypoint(ctx: JobContext) -> None:
         except Exception as exc:
             logger.warning("voice.room_disconnect_error", error=str(exc))
 
-    agent = MalayalamTriageAgent(orchestrator, on_session_end=_disconnect_room)
+    agent = MalayalamTriageAgent(orchestrator, room=ctx.room, on_session_end=_disconnect_room)
 
     await session.start(agent=agent, room=ctx.room)
     logger.info("voice.session_started", room=ctx.room.name)
+    await agent.speak_opening()
 
 
 def _close_workflow_sink(workflow_sink: _WorkflowSinkAdapter) -> Callable[[], Coroutine[None, None, None]]:

@@ -88,8 +88,8 @@ services:
     environment:
       # Container-to-container: the api talks to postgres/hapi by service
       # name on the compose network, not localhost.
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://swasthya:swasthya@postgres:5432/swasthya}
-      HAPI_FHIR_BASE_URL: ${HAPI_FHIR_BASE_URL:-http://hapi:8080/fhir}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-swasthya}:${POSTGRES_PASSWORD:-swasthya}@postgres:5432/${POSTGRES_DB:-swasthya}
+      HAPI_FHIR_BASE_URL: http://hapi:8080/fhir
       # Server-to-server: inside the compose network keycloak listens on
       # its container-internal port 8080, NOT the host-mapped 8081.
       KEYCLOAK_BASE_URL: http://keycloak:8080
@@ -118,8 +118,8 @@ services:
     env_file:
       - ../.env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://swasthya:swasthya@postgres:5432/swasthya}
-      HAPI_FHIR_BASE_URL: ${HAPI_FHIR_BASE_URL:-http://hapi:8080/fhir}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-swasthya}:${POSTGRES_PASSWORD:-swasthya}@postgres:5432/${POSTGRES_DB:-swasthya}
+      HAPI_FHIR_BASE_URL: http://hapi:8080/fhir
       KEYCLOAK_BASE_URL: http://keycloak:8080
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}

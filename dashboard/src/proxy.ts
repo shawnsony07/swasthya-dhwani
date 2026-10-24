@@ -10,9 +10,14 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isPublic =
     pathname.startsWith("/login") ||
+    pathname.startsWith("/patient") ||
+    pathname.startsWith("/api/patient") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico";
+    pathname === "/favicon.ico" ||
+    pathname === "/logo.png" ||
+    pathname === "/icon.png" ||
+    /\.(png|jpg|jpeg|svg|ico|webp)$/.test(pathname);
 
   if (isPublic) return NextResponse.next();
 
@@ -26,5 +31,7 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|logo.png|icon.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };
