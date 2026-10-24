@@ -1,10 +1,6 @@
 name: swasthya
 
-# Local demo stack per docs/architecture.md section 2 and section 11.
-# Intentionally OUT OF SCOPE for this compose file (see docker/README.md):
-#   - fhir-seeder (explicitly out of scope for this task)
-#   - voice-agent (needs live LiveKit room credentials this environment
-#     does not have; see docker/README.md for how to add it later)
+# Services: postgres, hapi, keycloak, api, voice-agent, dashboard.
 #
 # Run from the repo root:
 #   docker compose -f docker/docker-compose.yml up --build
