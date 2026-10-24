@@ -1,33 +1,49 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Bricolage_Grotesque,
+  Instrument_Sans,
+  JetBrains_Mono,
+  Noto_Sans_Malayalam,
+} from "next/font/google";
 import Providers from "@/components/Providers";
 import Footer from "@/components/Footer";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const display = Bricolage_Grotesque({
+  variable: "--font-display",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const body = Instrument_Sans({
+  variable: "--font-body",
   subsets: ["latin"],
+});
+
+const mono = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+});
+
+const ml = Noto_Sans_Malayalam({
+  variable: "--font-ml",
+  subsets: ["malayalam"],
 });
 
 export const metadata: Metadata = {
-  title: "Swasthya-Dhwani Dashboard",
-  description: "Doctor-facing alert and approval dashboard (synthetic/demo data)",
+  title: "Swasthya-Dhwani Clinician Console",
+  description:
+    "Live triage operations, call telemetry and Kerala-tier routing for clinicians and administrators (synthetic/demo data)",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${display.variable} ${body.variable} ${mono.variable} ${ml.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <Providers>
-          <div className="flex min-h-full flex-1 flex-col">
+          <div className="shell">
             {children}
             <Footer />
           </div>
