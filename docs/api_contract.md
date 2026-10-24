@@ -102,6 +102,33 @@ non-empty — this calls `weft_workflow.reject_with_reason`, which needs one).
 Transitions back to `WORKING`. Returns updated task detail. 409 on an
 illegal transition.
 
+### `POST /tasks/{task_id}/hospital-response`
+Requires `doctor`, `nurse`, or `admin`.
+Body: `{"actor": "string", "accepted": boolean, "re_route_hospital": "string | null", "reason": "string | null"}`
+When accepted, transitions `AWAITING_HOSPITAL` -> `FOLLOW_UP`.
+When declined with `re_route_hospital`, updates target hospital and remains `AWAITING_HOSPITAL`.
+
+### `POST /tasks/{task_id}/ambulance-status`
+Requires `doctor`, `nurse`, or `admin`.
+Body: `{"actor": "string", "dispatched": boolean, "vehicle_id": "string | null", "reason": "string | null"}`
+When dispatched, transitions `AMBULANCE_REQUESTED` -> `FOLLOW_UP`.
+When failed, transitions `AMBULANCE_REQUESTED` -> `FAILED`.
+
+### `POST /tasks/{task_id}/follow-up`
+Requires `nurse`, `doctor`, or `admin`.
+Body: `{"actor": "string", "reached_care": boolean, "notes": "string | null"}`
+When `reached_care` is true, transitions `FOLLOW_UP` -> `COMPLETED`.
+When false, transitions `FOLLOW_UP` -> `FAILED` (lost to follow-up).
+
+### `GET /admin/overrides`
+Requires `admin` or `doctor`.
+Returns list of audit override events (`rejected`, `auto_escalated`, `human_handoff`, `referral_declined`) for clinical auditing (L28).
+
+### `POST /admin/purge`
+Requires `admin`.
+Body: `{"actor": "string", "retention_days": 90}`
+Redacts raw transcript and raw audio references from old tasks per DPDP retention rules (L29).
+
 ### `GET /alerts/stream` (Server-Sent Events)
 `Content-Type: text/event-stream`. Implementation note (not a contract
 detail, but relevant to both sides): this polls the DB every 2 seconds
