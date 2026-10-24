@@ -48,6 +48,9 @@ export function useTasks(): UseTasksResult {
   useEffect(() => {
     if (status !== "authenticated" || !accessToken) return;
 
+    // Standard fetch-on-mount: `load`'s setState calls happen inside its
+    // async body after the awaited fetch, not synchronously here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
 
     const es = new EventSource(
