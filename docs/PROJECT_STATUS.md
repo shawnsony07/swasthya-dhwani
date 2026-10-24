@@ -140,42 +140,52 @@ Priority follows `docs/architecture.md` section 14's own ranking: **never
 cut a safety loop (L1, L3, L4, L14, L20, L21) to save a feature.** Items
 are grouped by that logic, not just listed top-to-bottom.
 
-### 5a. Safety-critical, in progress or next
+### 5a. Safety-critical — status
 
-1. **Real Twilio emergency call provider (L14).** The gateway's policy
-   (allow-list, rate limit, kill switch, idempotency, audit) is real and
-   tested; `LoggingEmergencyCallProvider` in
-   `src/swasthya/gateway/providers/null_providers.py` is a simulation.
-   Needs a `TwilioEmergencyCallProvider` implementing the same
-   `EmergencyCallProvider` Protocol (`src/swasthya/gateway/providers/base.py`),
-   using the `twilio` Python SDK (already installed, `pip show twilio` →
-   9.11.0, has an async HTTP client). Wire it into
-   `entrypoint.py`'s `_get_action_gateway()` behind an env var (e.g.
-   `EMERGENCY_CALL_PROVIDER=twilio|logging`, default `logging` so a
-   misconfigured deployment doesn't silently try to place real calls).
-   **Blocked on fresh Twilio credentials** (see section 3).
-2. **Twilio status callback webhook (L15).** Twilio calls are
-   asynchronous — placing the call succeeds immediately, but
-   answered/busy/no-answer arrives later via a webhook to a URL you
-   provide at call time. Needs a new API endpoint (e.g.
-   `POST /webhooks/twilio/call-status`, unauthenticated but signature-
-   verified per Twilio's `X-Twilio-Signature` header — see S11 in
-   architecture.md) that updates the action's audit trail. Without this,
-   `EMERGENCY_CALLED` only means "Twilio accepted the request," not "the
-   phone actually rang and was answered."
-3. **Kill-switch control (L19/L34).** `src/swasthya/gateway/kill_switch.py`
-   is fully built and tested; nothing exposes it to a human. Needs a
-   small API surface (`POST /admin/kill-switch/engage`,
-   `POST /admin/kill-switch/disable` with a required `reason`, `admin`
-   role only) and a dashboard control (even a single toggle + reason
-   field is enough for this pass).
-4. **On-call roster management (L21).** `OnCallRosterEntry` rows
-   currently require a direct DB insert. A minimal CRUD API
-   (`GET/POST/PATCH /roster`) would let this actually be usable without
-   psql access.
-5. **Duplicate-call guard (L26).** No code currently checks "is there
-   already an open case for this identifier?" before starting a new one.
-   Belongs in `src/swasthya/voice/conversation.py` or `agent.py` — look up
+1. **Real Twilio emergency call provider (L14) — BUILT, tested, blocked
+   on account activation.** `src/swasthya/gateway/providers/twilio_provider.py`
+   — `TwilioEmergencyCallProvider`, same `EmergencyCallProvider` Protocol
+   as the logging stand-in. Creates the call via plain `httpx` (not the
+   Twilio SDK — matches this codebase's FHIR-adapter pattern), then polls
+   `GET /Calls/{Sid}.json` until a terminal status or
+   `TWILIO_RING_TIMEOUT_SECONDS` elapses (architecture.md L15's own
+   documented fallback, used as the primary mechanism since no public
+   webhook URL exists yet — see item 2). 13 tests, all against mocked
+   HTTP (`tests/test_twilio_provider.py`). Wired into `entrypoint.py`
+   behind `EMERGENCY_CALL_PROVIDER=twilio` (default `logging` — a
+   misconfigured deployment never silently tries real calls). Ran the
+   **real end-to-end pipeline** against the user's live credentials: full
+   gateway policy (allow-list, rate limiter, audit trail) executed
+   correctly, the Twilio API call was attempted, and it resolved cleanly
+   to `EMERGENCY_CALL_FAILED` with a dashboard alert — no crash, no
+   token leaked in logs. The one remaining blocker is **not code**: the
+   Twilio account itself rejects all API calls with `"account ... is not
+   active"` (error 20003) even though the console shows it as active and
+   the credentials match exactly (confirmed via screenshot) — this needs
+   resolving on Twilio's side (check for a pending verification step in
+   their console/email) before a real call can go through.
+2. **Twilio status callback webhook (L15) — not started.** The poller in
+   item 1 is a real, working mechanism on its own; a webhook endpoint
+   (`POST /webhooks/twilio/call-status`, signature-verified per Twilio's
+   `X-Twilio-Signature` header, S11) would let a real deployment get the
+   result faster and without polling, but isn't required for the gateway
+   to function correctly today.
+3. **Kill-switch control (L19/L34) — BUILT and tested.** Was in-memory
+   and process-local (meaningless across the API/voice-agent process
+   boundary) — now DB-backed (`kill_switch_state` table, migration
+   `0003`, `src/swasthya/db/kill_switch_store.py`'s `DbKillSwitchStore`),
+   via the same store-injection pattern `AllowList`/`RateLimiter` already
+   use. `GET/POST /admin/kill-switch(/engage|/disable)`, `admin` role
+   only. 9 tests including one that proves state survives across two
+   separate `KillSwitch` instances reading the same DB (simulating the
+   cross-process case directly, not just trusting it).
+4. **On-call roster management (L21) — BUILT and tested.**
+   `GET/POST/PATCH/DELETE /admin/roster`, `admin` role only
+   (`src/swasthya/api/routers/admin.py`).
+5. **Duplicate-call guard (L26) — not started.** No code currently checks
+   "is there already an open case for this identifier?" before starting
+   a new one. Belongs in `src/swasthya/voice/conversation.py` or
+   `agent.py` — look up
    open tasks by `patient_identifier_hash` before calling `submit_task`.
 
 ### 5b. Reliability / "should build" tier
