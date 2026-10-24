@@ -163,6 +163,19 @@ class _WorkflowSinkAdapter:
         }
         self._session.commit()
 
+    def find_open_task_for_identifier(self, patient_identifier: str) -> str | None:
+        target_hash = hash_identifier(patient_identifier)
+        terminal_values = [state.value for state in TERMINAL_STATES]
+        stmt = (
+            select(Task)
+            .where(Task.patient_identifier_hash == target_hash)
+            .where(Task.state.notin_(terminal_values))
+            .order_by(Task.created_at.desc())
+            .limit(1)
+        )
+        task = self._session.scalars(stmt).first()
+        return task.task_id if task is not None else None
+
 
 class _FhirSinkAdapter:
     """Adapts the free functions in `swasthya.fhir.adapter` to the
