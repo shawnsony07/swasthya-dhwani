@@ -306,14 +306,17 @@ async def entrypoint(ctx: JobContext) -> None:
     session: AgentSession = AgentSession(
         stt=sarvam.STT(language="ml-IN"),
         llm=_build_llm(),
-        # The plugin's own `speaker` default is `None`, which the live
-        # Sarvam API rejects (confirmed against the real API: a request
-        # with no speaker 400s). SARVAM_TTS_VOICE must be a name valid for
-        # `model`'s generation (`anushka` is bulbul:v2 female, the
-        # plugin's default model) -- verified against the real API too.
+        # The plugin's own defaults don't work against the live API as of
+        # this build: `speaker` defaults to `None` (Sarvam 400s with no
+        # speaker), and `model` defaults to "bulbul:v2", which Sarvam has
+        # since deprecated server-side ("Model 'bulbul:v2' has been
+        # deprecated. Please use 'bulbul:v3' instead."). Both overridden
+        # here and verified against the real API: a bulbul:v3 + "priya"
+        # request returns real synthesized Malayalam audio.
         tts=sarvam.TTS(
             target_language_code="ml-IN",
-            speaker=os.environ.get("SARVAM_TTS_VOICE", "anushka"),
+            model="bulbul:v3",
+            speaker=os.environ.get("SARVAM_TTS_VOICE", "priya"),
         ),
         # AgentSession bundles Silero VAD by default (livekit-agents 1.6+);
         # no explicit vad= needed, and the standalone silero plugin package
