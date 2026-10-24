@@ -273,6 +273,24 @@ class MalayalamTriageAgent(Agent):
         elif outcome.kind is ConversationOutcomeKind.JOINED_EXISTING_CASE:
             logger.info("voice.joined_existing_case", task_id=outcome.task_id)
 
+        terminal_kinds = {
+            ConversationOutcomeKind.REFERRAL_READY,
+            ConversationOutcomeKind.HUMAN_HANDOFF,
+            ConversationOutcomeKind.ABANDONED_WITH_CALLBACK,
+            ConversationOutcomeKind.EMERGENCY_ESCALATED,
+            ConversationOutcomeKind.EMERGENCY_CALL_FAILED,
+        }
+        if outcome.kind in terminal_kinds and self._on_session_end is not None:
+            async def _delayed_end() -> None:
+                # Allow 4 seconds for TTS playback to conclude before disconnecting
+                await asyncio.sleep(4.0)
+                try:
+                    await self._on_session_end()
+                except Exception as exc:
+                    logger.warning("voice.on_session_end_failed", error=str(exc))
+
+            asyncio.create_task(_delayed_end())
+
     def mark_confirmed_by(self, confirmed_by: ConfirmedBy) -> None:
         """Called by the glue layer when a caregiver identifies themselves
         on the call (architecture.md "Caregiver path")."""
