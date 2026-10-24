@@ -59,7 +59,7 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
   }
   try {
     const response = await fetch(
-      `${keycloakBaseUrl}/realms/swasthya/protocol/openid-connect/token`,
+      `${keycloakBaseUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`,
       {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -91,7 +91,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   providers: [
     Keycloak({
-      issuer: `${keycloakBaseUrl}/realms/swasthya`,
+      issuer: `${keycloakBaseUrl}/realms/${keycloakRealm}`,
       clientId: process.env.KEYCLOAK_CLIENT_ID ?? "swasthya-dashboard",
       // Public client (no secret) per architecture.md section 11 and the
       // task brief -- Keycloak client "swasthya-dashboard" has no secret
