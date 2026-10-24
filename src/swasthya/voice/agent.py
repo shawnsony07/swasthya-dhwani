@@ -115,7 +115,7 @@ class MalayalamTriageAgent(Agent):
         self._state = ConversationState()
         self._audio_buffer = TurnAudioBuffer()
         self._confidence_high, self._confidence_low = _confidence_thresholds()
-        self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        self._gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
         self._interpreter_api_key = os.environ.get("GEMINI_API_KEY", "")
         # Set while the 5-second emergency confirmation window (F4) is
         # open; the next turn to arrive cancels it. If nothing arrives,
