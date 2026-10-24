@@ -194,19 +194,38 @@ _action_gateway: ActionGateway | None = None
 _gateway_allow_list: AllowList | None = None
 
 
+def _build_emergency_call_provider() -> EmergencyCallProvider:
+    """Real Twilio is opt-in via `EMERGENCY_CALL_PROVIDER=twilio`, never
+    the default — a deployment with no Twilio credentials configured must
+    fall back to the logging provider, not crash or silently fail every
+    emergency call. `TwilioEmergencyCallProvider.__init__` itself raises
+    `TwilioConfigurationError` if credentials are missing, so choosing
+    `twilio` without `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/
+    `TWILIO_FROM_NUMBER` fails loudly at startup, not on the first real
+    emergency."""
+    provider_choice = os.environ.get("EMERGENCY_CALL_PROVIDER", "logging").strip().lower()
+    if provider_choice == "twilio":
+        from swasthya.gateway.providers.twilio_provider import TwilioEmergencyCallProvider
+
+        logger.info("gateway.emergency_provider", provider="twilio")
+        return TwilioEmergencyCallProvider()
+    logger.info("gateway.emergency_provider", provider="logging")
+    return LoggingEmergencyCallProvider()
+
+
 def _get_action_gateway() -> tuple[ActionGateway, AllowList]:
     global _action_gateway, _gateway_allow_list
     if _action_gateway is None:
         _gateway_allow_list = AllowList()
-        # Twilio/SmartThings/a real voice-clone vendor are not wired in —
-        # no credentials for them exist yet (README's "Not done yet"). The
-        # Logging* providers are the honest current behavior, not a test
-        # stub standing in for something that secretly already works.
+        # SmartThings/a real voice-clone vendor are not wired in — no
+        # credentials for them exist yet. The emergency call provider is
+        # real Twilio when EMERGENCY_CALL_PROVIDER=twilio is set, the
+        # logging stand-in otherwise — see _build_emergency_call_provider.
         _action_gateway = ActionGateway(
             allow_list=_gateway_allow_list,
             rate_limiter=RateLimiter(),
             kill_switch=KillSwitch(),
-            emergency_provider=LoggingEmergencyCallProvider(),
+            emergency_provider=_build_emergency_call_provider(),
             device_provider=LoggingDeviceProvider(),
             voice_provider=NeutralVoiceProvider(),
         )
