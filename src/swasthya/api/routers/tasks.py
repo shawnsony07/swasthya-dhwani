@@ -39,7 +39,7 @@ from swasthya.api.schemas import (
     TriageSnapshot,
 )
 from swasthya.contracts import TaskState, Tier
-from swasthya.db.models import Task
+from swasthya.db.models import AuditEventRow, Task
 from swasthya.workflow.exceptions import IllegalTransitionError, TaskNotFoundError
 from swasthya.workflow.weft_workflow import (
     handle_ambulance_status,
@@ -71,6 +71,9 @@ def _decode_cursor(cursor: str) -> tuple[datetime, str]:
 
 
 def _to_summary(task: Task) -> TaskSummary:
+    snap = task.triage_snapshot or {}
+    metrics = snap.get("call_metrics") or {}
+    confidence = snap.get("interpretation_confidence")
     return TaskSummary(
         task_id=task.task_id,
         state=TaskState(task.state),
@@ -79,6 +82,9 @@ def _to_summary(task: Task) -> TaskSummary:
         is_time_critical=task.is_time_critical,
         created_at=task.created_at,
         updated_at=task.updated_at,
+        interpretation_confidence=confidence if snap else None,
+        call_duration_seconds=metrics.get("call_duration_seconds"),
+        language=metrics.get("language"),
     )
 
 
