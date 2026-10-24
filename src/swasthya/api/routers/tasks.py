@@ -29,14 +29,8 @@ from swasthya.api.db import get_db
 from swasthya.api.schemas import (
     AmbulanceStatusRequest,
     ApproveRequest,
-    FollowUpRequest,
-    HospitalResponseRequest,
-    RejectRequest,
-    TaskDetail,
-    TaskListResponse,
-    TaskSummary,
-    TriageSnapshot,
-)
+    AuditEventOut,
+
 from swasthya.contracts import TaskState, Tier
 from swasthya.db.models import Task
 from swasthya.workflow.exceptions import IllegalTransitionError, TaskNotFoundError
