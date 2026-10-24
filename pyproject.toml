@@ -1,0 +1,46 @@
+[project]
+name = "swasthya-dhwani"
+version = "0.1.0"
+description = "Swasthya-Dhwani x FluentPath triage spine"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "sse-starlette>=2.1",
+    "httpx>=0.27",
+    "tenacity>=8.2",
+    "structlog>=24.1",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "fhir.resources>=7.1",
+    "google-genai>=0.3",
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.14",
+    "respx>=0.21",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "jiwer>=3.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+
+[tool.setuptools.packages.find]
+where = ["src"]

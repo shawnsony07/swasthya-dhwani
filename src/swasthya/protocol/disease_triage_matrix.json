@@ -1,0 +1,71 @@
+{
+  "_clinical_sign_off": {
+    "status": "NOT CLINICALLY REVIEWED",
+    "note": "Tier values and the Suspected Stroke symptom list in this file are drafted by engineering from publicly described Kerala-protocol-style triage categories and FAST stroke screening, NOT by a clinician. They must be read against the source Kerala Health Services triage protocol by a qualified clinical owner before any real (non-synthetic) use. See docs/architecture.md section 5, 'Open item for the clinical owner', and loop L27 (protocol change sign-off must block merge without a recorded reviewer).",
+    "tier_values_meaning_see": "hospital_tier_definitions.md"
+  },
+  "protocol_version": "2025.11.01",
+  "tier_order_low_to_high_acuity": ["A", "B", "C2", "C1"],
+  "conditions": [
+    {
+      "id": "chest_pain",
+      "name": "Chest Pain",
+      "required_symptoms": ["chest_pain"],
+      "match_rule": "all",
+      "supporting_symptoms": ["sweating", "nausea", "left_arm_pain"],
+      "warning_signs": ["radiating_arm_pain", "crushing_pressure", "shortness_of_breath_with_chest_pain"],
+      "tier": "C2",
+      "escalated_tier": "C1",
+      "hospital_tier_required": "CHC_FRU_with_cardiac_care",
+      "notes": "Escalates to C1 (emergency referral) when a cardiac warning sign is present alongside chest pain."
+    },
+    {
+      "id": "breathing_difficulty",
+      "name": "Breathing Difficulty",
+      "required_symptoms": ["breathing_difficulty"],
+      "match_rule": "all",
+      "supporting_symptoms": ["wheeze", "cough"],
+      "warning_signs": ["blue_lips_or_face", "unable_to_speak_full_sentence", "stridor"],
+      "tier": "C2",
+      "escalated_tier": "C1",
+      "hospital_tier_required": "CHC_FRU_with_oxygen",
+      "notes": "Cyanosis, inability to complete a sentence, or stridor escalates to C1 emergency referral."
+    },
+    {
+      "id": "high_fever",
+      "name": "High Fever",
+      "required_symptoms": ["fever"],
+      "match_rule": "all",
+      "supporting_symptoms": ["chills", "body_ache", "headache"],
+      "warning_signs": ["fever_with_stiff_neck", "fever_with_rash", "fever_with_seizure", "fever_persistent_5_days"],
+      "tier": "B",
+      "escalated_tier": "C2",
+      "hospital_tier_required": "PHC",
+      "notes": "Meningitis-pattern or seizure-with-fever warning signs escalate to urgent (C2) referral rather than routine PHC follow-up."
+    },
+    {
+      "id": "trauma_injury",
+      "name": "Trauma / Injury",
+      "required_symptoms": ["trauma", "injury"],
+      "match_rule": "any",
+      "supporting_symptoms": ["visible_deformity", "bleeding", "swelling"],
+      "warning_signs": ["uncontrolled_bleeding", "loss_of_consciousness", "suspected_spinal_injury"],
+      "tier": "B",
+      "escalated_tier": "C1",
+      "hospital_tier_required": "CHC_FRU_trauma_capable",
+      "notes": "Uncontrolled bleeding, loss of consciousness, or suspected spinal injury escalates directly to C1."
+    },
+    {
+      "id": "suspected_stroke",
+      "name": "Suspected Stroke (FAST)",
+      "required_symptoms": ["facial_droop", "arm_weakness", "speech_difficulty"],
+      "match_rule": "any",
+      "supporting_symptoms": ["sudden_onset", "vision_loss", "loss_of_balance"],
+      "warning_signs": ["facial_droop", "arm_weakness", "speech_difficulty", "sudden_severe_headache"],
+      "tier": "C1",
+      "escalated_tier": "C1",
+      "hospital_tier_required": "stroke_unit_or_tertiary",
+      "notes": "DRAFT, NOT CLINICALLY SIGNED OFF. Modeled on the FAST stroke screen: any single required symptom (Face, Arm, Speech) is sufficient to suspect stroke and must resolve to C1, a mandatory referral trigger, per architecture.md T1/T2. Time-to-treatment is critical; this condition is also the trigger for the acuity floor in kerala_protocol_mcp.py's apply_acuity_floor."
+    }
+  ]
+}

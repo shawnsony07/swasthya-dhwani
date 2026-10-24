@@ -1,0 +1,489 @@
+{
+  "protocol_version": "2025.11.01",
+  "node_count": 48,
+  "edge_count": 48,
+  "nodes": [
+    {
+      "id": "condition:breathing_difficulty",
+      "type": "condition",
+      "label": "Breathing Difficulty"
+    },
+    {
+      "id": "condition:chest_pain",
+      "type": "condition",
+      "label": "Chest Pain"
+    },
+    {
+      "id": "condition:high_fever",
+      "type": "condition",
+      "label": "High Fever"
+    },
+    {
+      "id": "condition:suspected_stroke",
+      "type": "condition",
+      "label": "Suspected Stroke (FAST)"
+    },
+    {
+      "id": "condition:trauma_injury",
+      "type": "condition",
+      "label": "Trauma / Injury"
+    },
+    {
+      "id": "symptom:arm_weakness",
+      "type": "symptom",
+      "label": "arm_weakness"
+    },
+    {
+      "id": "symptom:bleeding",
+      "type": "symptom",
+      "label": "bleeding"
+    },
+    {
+      "id": "symptom:body_ache",
+      "type": "symptom",
+      "label": "body_ache"
+    },
+    {
+      "id": "symptom:breathing_difficulty",
+      "type": "symptom",
+      "label": "breathing_difficulty"
+    },
+    {
+      "id": "symptom:chest_pain",
+      "type": "symptom",
+      "label": "chest_pain"
+    },
+    {
+      "id": "symptom:chills",
+      "type": "symptom",
+      "label": "chills"
+    },
+    {
+      "id": "symptom:cough",
+      "type": "symptom",
+      "label": "cough"
+    },
+    {
+      "id": "symptom:facial_droop",
+      "type": "symptom",
+      "label": "facial_droop"
+    },
+    {
+      "id": "symptom:fever",
+      "type": "symptom",
+      "label": "fever"
+    },
+    {
+      "id": "symptom:headache",
+      "type": "symptom",
+      "label": "headache"
+    },
+    {
+      "id": "symptom:injury",
+      "type": "symptom",
+      "label": "injury"
+    },
+    {
+      "id": "symptom:left_arm_pain",
+      "type": "symptom",
+      "label": "left_arm_pain"
+    },
+    {
+      "id": "symptom:loss_of_balance",
+      "type": "symptom",
+      "label": "loss_of_balance"
+    },
+    {
+      "id": "symptom:nausea",
+      "type": "symptom",
+      "label": "nausea"
+    },
+    {
+      "id": "symptom:speech_difficulty",
+      "type": "symptom",
+      "label": "speech_difficulty"
+    },
+    {
+      "id": "symptom:sudden_onset",
+      "type": "symptom",
+      "label": "sudden_onset"
+    },
+    {
+      "id": "symptom:sweating",
+      "type": "symptom",
+      "label": "sweating"
+    },
+    {
+      "id": "symptom:swelling",
+      "type": "symptom",
+      "label": "swelling"
+    },
+    {
+      "id": "symptom:trauma",
+      "type": "symptom",
+      "label": "trauma"
+    },
+    {
+      "id": "symptom:visible_deformity",
+      "type": "symptom",
+      "label": "visible_deformity"
+    },
+    {
+      "id": "symptom:vision_loss",
+      "type": "symptom",
+      "label": "vision_loss"
+    },
+    {
+      "id": "symptom:wheeze",
+      "type": "symptom",
+      "label": "wheeze"
+    },
+    {
+      "id": "tier:A",
+      "type": "tier",
+      "label": "A"
+    },
+    {
+      "id": "tier:B",
+      "type": "tier",
+      "label": "B"
+    },
+    {
+      "id": "tier:C1",
+      "type": "tier",
+      "label": "C1"
+    },
+    {
+      "id": "tier:C2",
+      "type": "tier",
+      "label": "C2"
+    },
+    {
+      "id": "warning_sign:arm_weakness",
+      "type": "warning_sign",
+      "label": "arm_weakness"
+    },
+    {
+      "id": "warning_sign:blue_lips_or_face",
+      "type": "warning_sign",
+      "label": "blue_lips_or_face"
+    },
+    {
+      "id": "warning_sign:crushing_pressure",
+      "type": "warning_sign",
+      "label": "crushing_pressure"
+    },
+    {
+      "id": "warning_sign:facial_droop",
+      "type": "warning_sign",
+      "label": "facial_droop"
+    },
+    {
+      "id": "warning_sign:fever_persistent_5_days",
+      "type": "warning_sign",
+      "label": "fever_persistent_5_days"
+    },
+    {
+      "id": "warning_sign:fever_with_rash",
+      "type": "warning_sign",
+      "label": "fever_with_rash"
+    },
+    {
+      "id": "warning_sign:fever_with_seizure",
+      "type": "warning_sign",
+      "label": "fever_with_seizure"
+    },
+    {
+      "id": "warning_sign:fever_with_stiff_neck",
+      "type": "warning_sign",
+      "label": "fever_with_stiff_neck"
+    },
+    {
+      "id": "warning_sign:loss_of_consciousness",
+      "type": "warning_sign",
+      "label": "loss_of_consciousness"
+    },
+    {
+      "id": "warning_sign:radiating_arm_pain",
+      "type": "warning_sign",
+      "label": "radiating_arm_pain"
+    },
+    {
+      "id": "warning_sign:shortness_of_breath_with_chest_pain",
+      "type": "warning_sign",
+      "label": "shortness_of_breath_with_chest_pain"
+    },
+    {
+      "id": "warning_sign:speech_difficulty",
+      "type": "warning_sign",
+      "label": "speech_difficulty"
+    },
+    {
+      "id": "warning_sign:stridor",
+      "type": "warning_sign",
+      "label": "stridor"
+    },
+    {
+      "id": "warning_sign:sudden_severe_headache",
+      "type": "warning_sign",
+      "label": "sudden_severe_headache"
+    },
+    {
+      "id": "warning_sign:suspected_spinal_injury",
+      "type": "warning_sign",
+      "label": "suspected_spinal_injury"
+    },
+    {
+      "id": "warning_sign:unable_to_speak_full_sentence",
+      "type": "warning_sign",
+      "label": "unable_to_speak_full_sentence"
+    },
+    {
+      "id": "warning_sign:uncontrolled_bleeding",
+      "type": "warning_sign",
+      "label": "uncontrolled_bleeding"
+    }
+  ],
+  "edges": [
+    {
+      "source": "condition:breathing_difficulty",
+      "target": "tier:C1",
+      "relation": "escalates_to_tier"
+    },
+    {
+      "source": "condition:breathing_difficulty",
+      "target": "tier:C2",
+      "relation": "resolves_to_tier"
+    },
+    {
+      "source": "condition:chest_pain",
+      "target": "tier:C1",
+      "relation": "escalates_to_tier"
+    },
+    {
+      "source": "condition:chest_pain",
+      "target": "tier:C2",
+      "relation": "resolves_to_tier"
+    },
+    {
+      "source": "condition:high_fever",
+      "target": "tier:B",
+      "relation": "resolves_to_tier"
+    },
+    {
+      "source": "condition:high_fever",
+      "target": "tier:C2",
+      "relation": "escalates_to_tier"
+    },
+    {
+      "source": "condition:suspected_stroke",
+      "target": "tier:C1",
+      "relation": "resolves_to_tier"
+    },
+    {
+      "source": "condition:trauma_injury",
+      "target": "tier:B",
+      "relation": "resolves_to_tier"
+    },
+    {
+      "source": "condition:trauma_injury",
+      "target": "tier:C1",
+      "relation": "escalates_to_tier"
+    },
+    {
+      "source": "symptom:arm_weakness",
+      "target": "condition:suspected_stroke",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:bleeding",
+      "target": "condition:trauma_injury",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:body_ache",
+      "target": "condition:high_fever",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:breathing_difficulty",
+      "target": "condition:breathing_difficulty",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:chest_pain",
+      "target": "condition:chest_pain",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:chills",
+      "target": "condition:high_fever",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:cough",
+      "target": "condition:breathing_difficulty",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:facial_droop",
+      "target": "condition:suspected_stroke",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:fever",
+      "target": "condition:high_fever",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:headache",
+      "target": "condition:high_fever",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:injury",
+      "target": "condition:trauma_injury",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:left_arm_pain",
+      "target": "condition:chest_pain",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:loss_of_balance",
+      "target": "condition:suspected_stroke",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:nausea",
+      "target": "condition:chest_pain",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:speech_difficulty",
+      "target": "condition:suspected_stroke",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:sudden_onset",
+      "target": "condition:suspected_stroke",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:sweating",
+      "target": "condition:chest_pain",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:swelling",
+      "target": "condition:trauma_injury",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:trauma",
+      "target": "condition:trauma_injury",
+      "relation": "required_symptom"
+    },
+    {
+      "source": "symptom:visible_deformity",
+      "target": "condition:trauma_injury",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:vision_loss",
+      "target": "condition:suspected_stroke",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "symptom:wheeze",
+      "target": "condition:breathing_difficulty",
+      "relation": "supporting_symptom"
+    },
+    {
+      "source": "warning_sign:arm_weakness",
+      "target": "condition:suspected_stroke",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:blue_lips_or_face",
+      "target": "condition:breathing_difficulty",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:crushing_pressure",
+      "target": "condition:chest_pain",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:facial_droop",
+      "target": "condition:suspected_stroke",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:fever_persistent_5_days",
+      "target": "condition:high_fever",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:fever_with_rash",
+      "target": "condition:high_fever",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:fever_with_seizure",
+      "target": "condition:high_fever",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:fever_with_stiff_neck",
+      "target": "condition:high_fever",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:loss_of_consciousness",
+      "target": "condition:trauma_injury",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:radiating_arm_pain",
+      "target": "condition:chest_pain",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:shortness_of_breath_with_chest_pain",
+      "target": "condition:chest_pain",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:speech_difficulty",
+      "target": "condition:suspected_stroke",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:stridor",
+      "target": "condition:breathing_difficulty",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:sudden_severe_headache",
+      "target": "condition:suspected_stroke",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:suspected_spinal_injury",
+      "target": "condition:trauma_injury",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:unable_to_speak_full_sentence",
+      "target": "condition:breathing_difficulty",
+      "relation": "warning_sign"
+    },
+    {
+      "source": "warning_sign:uncontrolled_bleeding",
+      "target": "condition:trauma_injury",
+      "relation": "warning_sign"
+    }
+  ]
+}
