@@ -223,10 +223,13 @@ def _get_action_gateway() -> tuple[ActionGateway, AllowList]:
         # credentials for them exist yet. The emergency call provider is
         # real Twilio when EMERGENCY_CALL_PROVIDER=twilio is set, the
         # logging stand-in otherwise — see _build_emergency_call_provider.
+        # The kill switch is DB-backed (not the in-memory default) because
+        # it must be the same switch an admin flips from the API process
+        # — see DbKillSwitchStore's docstring.
         _action_gateway = ActionGateway(
             allow_list=_gateway_allow_list,
             rate_limiter=RateLimiter(),
-            kill_switch=KillSwitch(),
+            kill_switch=KillSwitch(DbKillSwitchStore(_get_session_factory())),
             emergency_provider=_build_emergency_call_provider(),
             device_provider=LoggingDeviceProvider(),
             voice_provider=NeutralVoiceProvider(),
