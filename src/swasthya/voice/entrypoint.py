@@ -369,9 +369,14 @@ async def entrypoint(ctx: JobContext) -> None:
         rule_engine=_RuleEngineAdapter(),
         workflow=workflow_sink,
         fhir=_FhirSinkAdapter(),
-        emergency=_EmergencyDispatcherAdapter(),
-    )
-    agent = MalayalamTriageAgent(orchestrator)
+    async def _disconnect_room() -> None:
+        try:
+            logger.info("voice.room_disconnecting", room=ctx.room.name)
+            await ctx.room.disconnect()
+        except Exception as exc:
+            logger.warning("voice.room_disconnect_error", error=str(exc))
+
+    agent = MalayalamTriageAgent(orchestrator, on_session_end=_disconnect_room)
 
     await session.start(agent=agent, room=ctx.room)
     logger.info("voice.session_started", room=ctx.room.name)
