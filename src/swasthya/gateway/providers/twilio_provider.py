@@ -81,6 +81,7 @@ class TwilioEmergencyCallProvider:
         auth_token: str | None = None,
         from_number: str | None = None,
         status_callback_url: str | None = None,
+        voice_url: str | None = None,
         ring_timeout_seconds: float | None = None,
     ) -> None:
         self._account_sid = account_sid or os.environ.get("TWILIO_ACCOUNT_SID", "")
@@ -89,6 +90,7 @@ class TwilioEmergencyCallProvider:
         self._status_callback_url = status_callback_url or os.environ.get(
             "TWILIO_STATUS_CALLBACK_URL", ""
         ) or None
+        self._voice_url = voice_url or os.environ.get("TWILIO_VOICE_URL", "") or None
         self._ring_timeout_seconds = ring_timeout_seconds or float(
             os.environ.get("TWILIO_RING_TIMEOUT_SECONDS", "30")
         )
@@ -118,18 +120,16 @@ class TwilioEmergencyCallProvider:
         return outcome
 
     async def _create_call(self, target: str, message: str) -> str:
-        # Plain <Say> TwiML, no public TwiML app needed. architecture.md
-        # F7: "states the patient's name or identifier, the location on
-        # file, the reported symptoms in plain words and a callback
-        # number. It gives no diagnosis" -- `message` is built by the
-        # caller (the gateway) to already satisfy that; this module does
-        # not alter its content.
-        twiml = f'<Response><Say language="ml-IN">{_escape_xml(message)}</Say></Response>'
-        data = {
+        data: dict[str, str] = {
             "To": target,
             "From": self._from_number,
-            "Twiml": twiml,
         }
+        if self._voice_url:
+            data["Url"] = self._voice_url
+        else:
+            twiml = f'<Response><Say language="ml-IN">{_escape_xml(message)}</Say></Response>'
+            data["Twiml"] = twiml
+
         if self._status_callback_url:
             data["StatusCallback"] = self._status_callback_url
             data["StatusCallbackEvent"] = "completed"
@@ -146,6 +146,15 @@ class TwilioEmergencyCallProvider:
                         f"{_API_BASE}/Accounts/{self._account_sid}/Calls.json",
                         data=data,
                     )
+                    # Trial accounts disallow inline TwiML; fall back to pre-configured or demo voice URL
+                    if response.status_code == 400 and "trial accounts have limited parameter access" in response.text:
+                        logger.warning("twilio.trial_account_fallback_url", reason="trial parameter restriction")
+                        data.pop("Twiml", None)
+                        data["Url"] = self._voice_url or "http://demo.twilio.com/docs/voice.xml"
+                        response = await client.post(
+                            f"{_API_BASE}/Accounts/{self._account_sid}/Calls.json",
+                            data=data,
+                        )
                     response.raise_for_status()
                     return str(response.json()["sid"])
 
