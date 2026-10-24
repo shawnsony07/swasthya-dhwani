@@ -100,6 +100,25 @@ class _WorkflowSinkAdapter:
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session: Session = session_factory()
+        self.call_metrics: CallMetricsCollector | None = None
+        self._snapshot_task_ids: list[str] = []
+
+    def finalize_call_metrics(self) -> None:
+        """Re-stamp call_metrics with the real end time/duration on every
+        task this call saved a snapshot for. Failure here must never break
+        call teardown."""
+        if self.call_metrics is None:
+            return
+        try:
+            data = self.call_metrics.snapshot()
+            for task_id in self._snapshot_task_ids:
+                task = self._session.get(Task, task_id)
+                if task is not None and task.triage_snapshot is not None:
+                    task.triage_snapshot = {**task.triage_snapshot, "call_metrics": data}
+            self._session.commit()
+        except Exception as exc:  # noqa: BLE001
+            self._session.rollback()
+            logger.warning("voice.call_metrics_finalize_failed", error=str(exc))
 
     def close(self) -> None:
         self._session.close()
@@ -161,6 +180,13 @@ class _WorkflowSinkAdapter:
             "interpreter_model": triage.interpreter_model,
             "protocol_version": triage.protocol_version,
         }
+        if self.call_metrics is not None:
+            task.triage_snapshot = {
+                **task.triage_snapshot,
+                "call_metrics": self.call_metrics.snapshot(),
+            }
+        if task_id not in self._snapshot_task_ids:
+            self._snapshot_task_ids.append(task_id)
         self._session.commit()
 
     def find_open_task_for_identifier(self, patient_identifier: str) -> str | None:
