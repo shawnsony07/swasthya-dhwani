@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // so there's nothing worth statically prerendering -- and leaving it on
   // forces every dynamic read behind an explicit Suspense/"use cache"
   // boundary for no benefit on a dashboard that's dynamic end to end.
+  allowedDevOrigins: [
+    "*.trycloudflare.com",
+    "localhost:3000",
+    "localhost:3001",
+  ],
   turbopack: {
     rules: {
       "*.css": {

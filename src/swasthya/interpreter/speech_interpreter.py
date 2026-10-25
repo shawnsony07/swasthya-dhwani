@@ -115,16 +115,23 @@ commentary, or any text outside the JSON object.
 
 Field guidance:
 - interpretation: your best-guess plain transcription/interpretation of what \
-  was said, in the original language of the speech.
+  was said. Patients in Kerala frequently mix Malayalam and English (Manglish) \
+  or speak pure Malayalam or English. Accurately capture their intended words \
+  without inventing symptoms or assuming conditions.
 - confidence: a float between 0.0 and 1.0 for how sure you are of that \
   interpretation.
 - alternatives: 0-3 other plausible interpretations, most likely first.
 - impairment_signals: zero or more labels from this fixed, closed vocabulary \
-  only: {signals}. These are descriptive labels about how the speech sounded, \
-  never a diagnosis.
-- emergency_terms_heard: literal emergency/warning-sign words or phrases you \
-  heard (e.g. words for chest pain, can't breathe, face drooping, one-sided \
-  weakness), in the language they were spoken in. Empty list if none.
+  only: {signals}. Only flag if the audio genuinely exhibits physical speech \
+  impairment (slurring, extreme pauses, repetition). Do not flag slurred speech \
+  just because unfamiliar words or transliterated names/technical terms appear.
+- emergency_terms_heard: STRICT LITERAL MATCHING ONLY. Return non-empty ONLY if \
+  the patient explicitly and literally stated an acute life-threatening \
+  emergency: severe crushing chest pain / heart attack, inability to breathe / \
+  suffocation, acute stroke facial drooping / paralysis, loss of consciousness, \
+  or massive uncontrolled bleeding. NEVER infer, guess, or imagine an emergency \
+  if the patient did not explicitly speak those specific words. If in doubt or \
+  for any non-critical utterance, this MUST BE an empty list: [].
 """.format(signals=", ".join(IMPAIRMENT_SIGNALS))
 
 

@@ -177,9 +177,24 @@ export default function PatientVoiceClient() {
     try {
       setCallStatus("requesting");
       setMessages([]);
+      setStatusMessage("മൈക്രോഫോൺ ബന്ധിപ്പിക്കുന്നു (Requesting audio permission)...");
+
+      // 1. Immediately request microphone access within the user gesture context (crucial for iOS Safari & Android)
+      try {
+        if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          // Close temporary probe stream so LiveKit can cleanly bind the audio device
+          stream.getTracks().forEach((t) => t.stop());
+        }
+      } catch (permErr: any) {
+        if (permErr?.name === "NotAllowedError" || permErr?.name === "PermissionDeniedError") {
+          throw new Error("മൈക്രോഫോൺ അനുമതി നിഷേധിച്ചു. ബ്രൗസറിൽ മൈക്ക് അനുവദിക്കുക (Microphone permission denied in browser)");
+        }
+      }
+
       setStatusMessage("ലൈവ് ടോക്കൺ തയ്യാറാക്കുന്നു (Requesting emergency token)...");
 
-      // 1. Fetch public patient token from our Next.js proxy route
+      // 2. Fetch public patient token from our Next.js proxy route
       const tokenRes = await fetch(
         `/api/patient/token?district=${encodeURIComponent(district)}`
       );
@@ -192,7 +207,7 @@ export default function PatientVoiceClient() {
       setCallStatus("connecting");
       setStatusMessage("വോയ്‌സ് ഏജന്റിലേക്ക് ബന്ധിപ്പിക്കുന്നു (Connecting WebRTC audio)...");
 
-      // 2. Initialize LiveKit Room
+      // 3. Initialize LiveKit Room & unlock audio for mobile autoplay policy
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -203,6 +218,20 @@ export default function PatientVoiceClient() {
         },
       });
       roomRef.current = room;
+
+      // Unlock browser audio context for mobile speakers
+      try {
+        await room.startAudio();
+      } catch {
+        // Ignored; will retry on connect
+      }
+
+      // Handle mobile browser autoplay gating
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        if (!room.canPlayAudio) {
+          setStatusMessage("ശബ്ദം കേൾക്കാൻ സ്ക്രീനിൽ സ്പർശിക്കുക (Tap screen to enable audio)");
+        }
+      });
 
       // Listen for remote audio track from Swasthya Triage Agent
       room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
@@ -290,8 +319,11 @@ export default function PatientVoiceClient() {
         setStatusMessage("സംഭാഷണം അവസാനിച്ചു (Call Completed)");
       });
 
-      // 3. Connect to LiveKit Room
+      // 4. Connect to LiveKit Room
       await room.connect(server_url, token);
+
+      // Start audio playback explicitly post-connection
+      await room.startAudio();
 
       // Check existing participants in case track was published immediately
       room.remoteParticipants.forEach((p) => {
@@ -300,7 +332,7 @@ export default function PatientVoiceClient() {
         });
       });
 
-      // 4. Publish Microphone
+      // 5. Publish Microphone
       await room.localParticipant.setMicrophoneEnabled(true);
 
       setCallStatus("connected");
@@ -515,13 +547,23 @@ export default function PatientVoiceClient() {
 
           <button
             type="button"
-            onClick={
-              callStatus === "connected"
-                ? handleEndCall
-                : callStatus === "idle" || callStatus === "ended" || callStatus === "error"
-                ? handleStartCall
-                : undefined
-            }
+            onClick={async () => {
+              if (callStatus === "connected") {
+                // Clicking while in call unblocks any mobile autoplay restrictions & ensures mic is active
+                if (roomRef.current) {
+                  try {
+                    await roomRef.current.startAudio();
+                  } catch {
+                    // Ignore
+                  }
+                }
+                setMicActive(true);
+                setIsMuted(false);
+                setStatusMessage("ഇപ്പോൾ സംസാരിക്കാം (Hands-free live · Just speak into mic)");
+              } else if (callStatus === "idle" || callStatus === "ended" || callStatus === "error") {
+                handleStartCall();
+              }
+            }}
             disabled={callStatus === "requesting" || callStatus === "connecting"}
             className={`patient-voice-orb ${callStatus === "connected" ? "connected" : ""} ${
               isAgentSpeaking ? "speaking" : ""
@@ -540,8 +582,8 @@ export default function PatientVoiceClient() {
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                   <line x1="12" x2="12" y1="19" y2="22" />
                 </svg>
-                <span style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                  {isAgentSpeaking ? "സംസാരിക്കുന്നു" : "കേൾക്കുന്നു"}
+                <span style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.03em", textTransform: "uppercase" }}>
+                  {isAgentSpeaking ? "ശ്രദ്ധിക്കുക (Listening)" : "സംസാരിക്കാം (Speak Now)"}
                 </span>
               </div>
             ) : (
@@ -551,7 +593,8 @@ export default function PatientVoiceClient() {
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                   <line x1="12" x2="12" y1="19" y2="22" />
                 </svg>
-                <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>തുടങ്ങുക (Tap)</span>
+                <span style={{ fontSize: "0.74rem", fontWeight: 700 }}>കോൾ ആരംഭിക്കുക</span>
+                <span style={{ fontSize: "0.62rem", opacity: 0.85 }}>Tap to Start</span>
               </div>
             )}
           </button>

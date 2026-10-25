@@ -173,7 +173,7 @@ class MalayalamTriageAgent(Agent):
         logger.info("voice.speaking_opening_line")
         await self._set_speaking_state(True, text=_OPENING_LINE)
         try:
-            self.session.say(_OPENING_LINE, add_to_chat_ctx=False)
+            self.session.say(_OPENING_LINE, add_to_chat_ctx=False, allow_interruptions=False)
         except Exception as exc:  # noqa: BLE001
             logger.error("voice.speak_opening_failed", error=str(exc))
         if self._room and self._room.local_participant:
@@ -277,7 +277,22 @@ class MalayalamTriageAgent(Agent):
             await self._apply_outcome(outcome)
             raise StopResponse
 
+        # Verify reported emergency terms against utterance text to eliminate model hallucinations
+        is_real_emergency = False
         if interpreted.emergency_terms_heard:
+            combined = (transcript + " " + interpreted.interpretation).lower()
+            EMERGENCY_SUBSTRINGS = (
+                "നെഞ്ച", "heart", "chest", "ശ്വാസ", "breath", "chok",
+                "പക്ഷാഘാത", "stroke", "paraly", "തളർ", "droop", "രക്തസ്രാവ",
+                "bleed", "ബോധ", "faint", "unconscious", "collapse", "അപസ്മാര", "seizure", "fit"
+            )
+            for term in interpreted.emergency_terms_heard:
+                t_lower = term.lower()
+                if any(sub in t_lower for sub in EMERGENCY_SUBSTRINGS) and any(sub in combined for sub in EMERGENCY_SUBSTRINGS):
+                    is_real_emergency = True
+                    break
+
+        if is_real_emergency:
             outcome = self._orchestrator.handle_emergency_terms(self._state)
             await self._apply_outcome(outcome)
             self._start_emergency_window()
@@ -369,7 +384,7 @@ class MalayalamTriageAgent(Agent):
         if text_to_speak:
             await self._set_speaking_state(True, text=text_to_speak)
             try:
-                self.session.say(text_to_speak, add_to_chat_ctx=False)
+                self.session.say(text_to_speak, add_to_chat_ctx=False, allow_interruptions=False)
             except Exception as exc:  # noqa: BLE001
                 logger.error("voice.say_failed", error=str(exc))
             if self._room and self._room.local_participant:
