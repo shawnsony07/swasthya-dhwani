@@ -24,3 +24,5 @@ htmlcov/
 *.crdownload
 tools/
 *.exe
+docs/agent_prompts_log.txt
+agent_prompts_log.txt

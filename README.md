@@ -210,10 +210,9 @@ swasthya-dhwani/
 ├── deploy/                     # VPS automated provisioning & Caddy configuration
 │   ├── setup_vps.sh            # 1-click Ubuntu setup script
 │   └── Caddyfile               # Automatic Let's Encrypt reverse proxy
-├── docs/                       # Architecture diagrams, specifications & logs
+├── docs/                       # Architecture diagrams, specifications & guides
 │   ├── architecture.md         # Full system architectural specification
 │   ├── api_contract.md         # REST API & SSE contract
-│   ├── agent_prompts_log.txt   # Complete user-authored prompt specification
 │   └── TELEPHONY_SIP_SETUP.md  # LiveKit SIP & Twilio telephony guide
 ├── src/swasthya/               # Core Python package
 │   ├── api/                    # FastAPI endpoints, auth & SSE alerts
