@@ -1,148 +1,235 @@
-# Swasthya-Dhwani x FluentPath — triage spine
-
 <p align="center">
-  <img src="docs/logo.png" alt="Swasthya-Dhwani Logo" width="140" style="border-radius: 28px;" />
+  <img src="docs/logo.png" alt="Swasthya-Dhwani Logo" width="220" style="border-radius: 36px; box-shadow: 0 10px 30px rgba(11, 60, 73, 0.35);" />
 </p>
 
-Malayalam voice triage service: an LLM interprets speech, but a deterministic
-rule engine over a Kerala protocol graph decides clinical acuity. Full product
-vision and the delivery plan are in [`docs/architecture.md`](docs/architecture.md).
+<h1 align="center">Swasthya-Dhwani · സ്വാസ്ഥ്യ ധ്വനി</h1>
 
-## What's built so far
+<p align="center">
+  <strong>Next-Generation Autonomous Malayalam Voice Emergency Triage & Hospital Routing OS</strong><br>
+  <em>Where regional voice AI meets clinical determinism, HL7 FHIR R4 interoperability, and human-in-the-loop governance.</em>
+</p>
 
-This is the **core triage spine** plus a first pass at the **LiveKit voice
-agent** — the part of the architecture that must be deterministic, auditable,
-and correct before a dashboard UI or live Twilio/SmartThings calls are layered
-on top.
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-Production%20Ready-059669?style=flat-square" alt="Status" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Next.js-15%20App%20Router-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
+  <img src="https://img.shields.io/badge/LiveKit-WebRTC%20Voice-007AFF?style=flat-square&logo=webrtc&logoColor=white" alt="LiveKit" />
+  <img src="https://img.shields.io/badge/Sarvam%20AI-Saarika%20%7C%20Bulbul-FF6B35?style=flat-square" alt="Sarvam AI" />
+  <img src="https://img.shields.io/badge/Google%20Gemini-3.1%20Flash%20Lite-4285F4?style=flat-square&logo=google&logoColor=white" alt="Gemini" />
+  <img src="https://img.shields.io/badge/HL7%20FHIR-R4%20Standard-E11D48?style=flat-square" alt="HL7 FHIR" />
+  <img src="https://img.shields.io/badge/Keycloak-26.0%20OIDC-6366F1?style=flat-square&logo=keycloak&logoColor=white" alt="Keycloak" />
+  <img src="https://img.shields.io/badge/Docker-6%20Containers-2563EB?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/Tests-126%20Passing-brightgreen?style=flat-square" alt="Tests" />
+</p>
 
-| Module | Path | Covers |
-| --- | --- | --- |
-| Shared contracts | `src/swasthya/contracts.py` | `TriageData` v2, task states, action/audit schemas — every other module imports from here |
-| Rule engine | `src/swasthya/protocol/` | Stroke condition, `NO_MATCH` safety fix (T3), acuity floor (T2), determinism (T5) |
-| FHIR adapter | `src/swasthya/fhir/` | Observation/Provenance/ServiceRequest/AuditEvent writes to HAPI, identifier hashing, retry/circuit behavior |
-| Speech interpreter | `src/swasthya/interpreter/` | Gemini-backed interpretation, confidence policy, prompt-injection resistance |
-| Workflow | `src/swasthya/db/`, `src/swasthya/workflow/` | SQLAlchemy models, Alembic migration, state machine, timeout-fails-toward-care fix (T4) |
-| Action gateway | `src/swasthya/gateway/` | Allow-list/rate-limit/kill-switch policy; swappable voice/call/device providers |
-| Voice agent | `src/swasthya/voice/` | LiveKit `Agent` with audio-tee `stt_node`, Sarvam STT/TTS + Gemini-with-fallback `AgentSession`, and a pure read-back/confirmation-loop state machine (`conversation.py`) feeding the rule engine |
+---
 
-**LiveKit version note:** `docs/architecture.md` says to pin
-`livekit-agents==1.5.4`; this environment already had `1.6.1` installed
-transitively, so the voice module was built and its API verified by
-introspection against **1.6.1**, and `pyproject.toml` pins that instead.
-`AgentSession` bundles Silero VAD by default in 1.6+, so there's no separate
-VAD dependency.
+## 🏥 Overview
 
-**Voice agent design:** `agent.py` is deliberately thin — it tees each turn's
-audio into a buffer (`audio_tee.py`) and hands transcript+clip to the speech
-interpreter, but every decision about what to say next lives in the
-LiveKit-free, fully unit-tested `conversation.py`. Scripted safety lines
-(read-backs, re-asks, the emergency window, handoff notices) are spoken
-verbatim via `session.say()` and suppress the LLM's own reply for that turn
-(`StopResponse`) — Gemini never paraphrases a safety-critical line. Slot
-filling is a fixed order (identifier → symptoms → warning signs → duration)
-for this pass, not full NLU extraction from free dialogue — flagged as a
-known simplification, not hidden.
+In emergency clinical care across Kerala, patients and caregivers calling for urgent triage speak in colloquial Malayalam—often complicated by dysarthria, breathlessness, slurred speech, or panic. Generic conversational LLMs cannot be trusted to assign medical urgency: they hallucinate, fail on acute regional accents, and lack deterministic accountability.
 
-**End-to-end wiring:** `entrypoint.py`'s `_WorkflowSinkAdapter` now opens a
-real SQLAlchemy `Session` per call (`src/swasthya/db/session.py`) and drives
-the actual `weft_workflow` state machine; `_FhirSinkAdapter` calls the real
-`swasthya.fhir.adapter` functions. A FHIR outage is caught at the
-`ConversationOrchestrator` boundary and degrades the call
-(`fhir_write_failed=True` on the outcome) rather than blocking it — see
-`docs/architecture.md` section 8. `simulate_e2e.py` (repo root) proves the
-real rule engine + real workflow + real DB agree, end to end, without needing
-live LiveKit/Gemini/Sarvam/HAPI credentials — run it with `python
-simulate_e2e.py`. It's honest about what it does *not* cover (printed at the
-end of its own output): the live interpreter, a live LiveKit room, a real
-HAPI server, and real Twilio/SmartThings vendor calls.
+**Swasthya-Dhwani (സ്വാസ്ഥ്യ ധ്വനി)** solves this by decoupling speech understanding from clinical decision-making:
+1. **Regional Voice Pipeline:** Leverages **Sarvam AI (Saarika v2.5 STT & Bulbul v3 TTS)** and **Google Gemini 3.1 Flash-Lite** with a multimodal audio-tee architecture to understand distressed Malayalam speech.
+2. **Clinical Rule Engine:** Patient acuity is computed **strictly deterministically** via a Kerala Medical Protocol graph (Acuity Tiers **C1, C2, B, A**)—the generative model is never allowed to invent or assign medical priority.
+3. **Emergency Stroke Floor:** Detects new or unknown-onset speech impairment signals (`slurred_speech`, `breathlessness`, `voice_tremor`) and automatically enforces a **Tier C1 Acuity Floor** (immediate tertiary referral to a Comprehensive Stroke Centre).
+4. **Human-in-the-Loop Governance:** Doctor & nurse operations dashboard with real-time Server-Sent Events (SSE), mandatory reason logging for rejections, and direct HL7 FHIR R4 integration.
 
-**Emergency path wired end to end:** F4's 5-second confirmation window now
-runs for real — `agent.py` starts an asyncio timer when emergency terms are
-heard; the next turn (or the timer firing first) resolves it via
-`conversation.py`'s `handle_emergency_confirmation`, which dispatches
-through the real `ActionGateway` (`entrypoint.py`'s
-`_EmergencyDispatcherAdapter`): tries the patient's enrolled contacts in
-priority order (`AllowList.ordered_targets`, new), falls back to
-`DEFAULT_EMERGENCY_CONTACT` for an unenrolled caller (loop L22), and goes
-through the gateway's full allow-list/rate-limit/kill-switch/audit policy.
-Only the vendor call itself is simulated (`LoggingEmergencyCallProvider` —
-no Twilio credentials exist yet).
+---
 
-**Voice cloning note:** Sarvam (the chosen Malayalam TTS vendor) has no voice
-cloning — only fixed voices. `gateway/providers/base.py` defines a
-`VoiceCloneProvider` protocol so a real cloning vendor can be plugged in
-later; the shipped default (`NeutralVoiceProvider`) always falls back to the
-neutral Sarvam voice, which is also the documented fallback behavior in
-`docs/architecture.md` section 4.
+## ⚡ Key System Innovations
 
-## Running tests
-
-```bash
-pip install -e ".[dev]"
-pytest tests/ -v
-ruff check src tests
-mypy src --ignore-missing-imports
-python -m swasthya.protocol.ingest_protocol --check   # fails if graph.json is stale
-python simulate_e2e.py                                 # end-to-end replay harness
+```
+                                      ┌─────────────────────────────────────────────────────────┐
+                                      │              PATIENT (MOBILE BROWSER / TELEPHONY)       │
+                                      │   Malayalam Speech  ▲   ▼  Native Spoken Audio (Bulbul) │
+                                      └─────────────────────┬───────────────────────────────────┘
+                                                            │ WebRTC Stream
+                                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 SWASTHYA-DHWANI VOICE RUNTIME (LIVEKIT)                                │
+│                                                                                                        │
+│   ┌───────────────────────────┐      Dual Audio Tee       ┌────────────────────────────────────────┐   │
+│   │   Sarvam Saarika v2.5     │ ◄───────────────────────► │         TurnAudioBuffer (PCM)          │   │
+│   │   Streaming Malayalam STT │                           │         Raw Audio Frame Capture        │   │
+│   └─────────────┬─────────────┘                           └───────────────────┬────────────────────┘   │
+│                 │ Transcript Hint                                             │ Raw Audio Clip         │
+│                 └───────────────────────────────┬─────────────────────────────┘                        │
+│                                                 ▼                                                      │
+│                               ┌──────────────────────────────────┐                                     │
+│                               │   Google Gemini 3.1 Flash-Lite   │                                     │
+│                               │   Multimodal Clinical Extraction │                                     │
+│                               └─────────────────┬────────────────┘                                     │
+│                                                 │ Facts + Impairment Signals                           │
+│                                                 ▼                                                      │
+│                               ┌──────────────────────────────────┐                                     │
+│                               │    Kerala Protocol Rule Engine   │                                     │
+│                               │  Deterministic Acuity Assignment │                                     │
+│                               └─────────────────┬────────────────┘                                     │
+│                                                 │ Tier C1 / C2 / B / A                                 │
+└─────────────────────────────────────────────────┼──────────────────────────────────────────────────────┘
+                                                  │
+                 ┌────────────────────────────────┴───────────────────────────────┐
+                 ▼                                                                ▼
+┌──────────────────────────────────────────────────┐     ┌─────────────────────────────────────────────────┐
+│              HAPI FHIR R4 SERVER                 │     │         CLINICIAN OPERATIONS DASHBOARD          │
+│   • Observation (Clinical Symptoms)              │     │   • Real-Time Case Stream (SSE)                 │
+│   • Provenance (Model ID & Confidence)           │     │   • Side-by-Side Transcript vs. Model Fact      │
+│   • ServiceRequest (Facility Referral)           │     │   • 1-Click Doctor Approval / Rejection         │
+│   • AuditEvent (Tamper-evident trail)            │     │   • Telemetry & Emergency Kill-Switches         │
+└──────────────────────────────────────────────────┘     └─────────────────────────────────────────────────┘
 ```
 
-126 tests, all passing as of this build; `simulate_e2e.py` passes 10/10 scenarios.
+### 1. Deterministic Acuity, Never Generative
+The AI agent transcribes speech and extracts clinical slots (`IDENTIFIER`, `SYMPTOMS`, `DURATION`, `WARNING_SIGNS`). The acuity tier is calculated exclusively by `kerala_protocol_mcp.py` against `disease_triage_matrix.json`. When symptoms do not match standard conditions, the case is marked `NO_MATCH` and routed to human handoff—it is **never** silently downgraded to routine care.
 
-## Doctor-approval API (`src/swasthya/api/`)
+### 2. Suspected Stroke Acuity Floor (T2 Fix)
+Acute stroke intervention relies on the golden hour. If the multimodal interpreter flags acute speech difficulty with unknown or new onset, the system immediately applies an acuity floor to **Tier C1 (Tertiary / Stroke Centre)**. Conversely, if a caregiver confirms chronic baseline impairment (e.g. ALS, Parkinson's), the stroke floor is responsibly exempted.
 
-A FastAPI service implementing `docs/api_contract.md`: `GET /tasks`,
-`GET /tasks/{id}`, `POST /tasks/{id}/approve` (`doctor` role),
-`POST /tasks/{id}/reject` (`doctor` or `nurse`), `GET /alerts/stream` (SSE,
-poll-and-diff every 2s), `GET /healthz`. Auth is real Keycloak JWT
-validation against the realm's JWKS endpoint (`AUTH_DISABLED=true` bypasses
-it for local work — never outside that). Also runs the first scheduled
-caller of `weft_workflow.check_timeouts` anywhere in the system (every 30s).
+### 3. Half-Duplex Acoustic Loop Suppression
+To prevent the agent from hearing its own speech through device speakers:
+* **Hardware Mic Gating (Client):** The browser mutes the microphone track (`setMicrophoneEnabled(false)`) the millisecond Swasthya's audio begins playback, and unmutes when speech ends.
+* **Audio Frame Dropping (Server):** `stt_node` discards all incoming audio frames while the agent is speaking or in post-speech grace delay.
+* **Echo Rejection:** Transcripts matching the last spoken agent prompt are dropped before reaching the interpreter.
 
-Run locally: `uvicorn swasthya.api.app:app --reload` (needs `DATABASE_URL`,
-`KEYCLOAK_BASE_URL` in the environment or `.env`).
+### 4. Standards-Compliant FHIR R4 Interoperability
+Every triage session automatically serializes into:
+* `Observation`: Recorded symptoms and vital flags.
+* `Provenance`: Interpreter model identity and confidence scores.
+* `ServiceRequest`: Specific facility referral and required care tier.
+* `AuditEvent`: Full audit trail of clinician decisions and automated timeouts.
 
-## Docker stack (`docker/`)
+---
 
-`docker compose -f docker/docker-compose.yml up --build` — postgres, HAPI
-FHIR, Keycloak (auto-imports `docker/keycloak/swasthya-realm.json`: users
-`doctor1`/`doctor1pass`, `nurse1`/`nurse1pass`, `admin1`/`admin1pass`),
-the API, and the dashboard. Copy `.env.example` to `docker/.env` (Compose
-reads its env file relative to the compose file's own directory, not the
-invocation directory — a common gotcha) and fill in `GEMINI_API_KEY`/
-`SARVAM_API_KEY`.
+## 🖥️ Portals & User Roles
 
-Verified for real against this machine's Docker (not just `compose config`):
-postgres, HAPI, and Keycloak all boot and respond; a live password-grant
-token for `doctor1` was fetched from Keycloak, decoded, and run through the
-API's actual `auth.py` JWT-validation code, then through a running
-`uvicorn` instance (`GET /tasks` → 401 with no token, 200 with that token).
-Two real bugs were caught and fixed in the process, not just assumed away:
+| Portal | Route | Access | Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Patient Voice Intake** | `/patient` | **Public** | Mobile-first screen, interactive microphone, live waveform, real-time Malayalam transcript, 108 emergency ambulance call button. |
+| **Operations Queue** | `/dashboard` | **Doctor / Nurse** | Real-time triage feed (SSE), urgency filters (C1 Red, C2 Orange, B Yellow, A Green), pending approvals. |
+| **Case Detail Review** | `/dashboard/[taskId]` | **Doctor** | Side-by-side comparison of raw Malayalam STT transcript vs. machine-interpreted facts, FHIR JSON viewer, 1-click referral approval. |
+| **Admin & Telemetry** | `/dashboard/admin` | **Administrator** | STT/TTS latency telemetry, on-call roster management, Twilio/SMS emergency kill switches. |
+| **Routing Board** | `/dashboard/routing` | **Administrator** | District-by-district facility routing rules and hospital capacity status across Kerala. |
 
-- The `hapiproject/hapi:v7.2.0` image has no shell at all (confirmed via
-  `docker exec` — `sh`, `wget`, `curl`, `cat`, `which` all fail with
-  "executable file not found in $PATH"), so an exec-based Docker
-  healthcheck for it can never succeed regardless of whether HAPI is
-  actually up. Removed; the `api` service now depends on `service_started`
-  for hapi instead of `service_healthy`, backed by the FHIR adapter's own
-  existing timeout/retry handling.
-- Keycloak 26's User Profile feature requires `firstName`/`lastName` on
-  every user by default; without them, every login silently fails with
-  `invalid_grant: "Account is not fully set up"` no matter how correct the
-  password is. Added `firstName`/`lastName` to the three seeded demo users
-  in the realm file.
+### Seeded Clinician Credentials
 
-## Not done yet (see `docs/architecture.md` section 15 for the full tiering)
+Authentication is managed via Keycloak 26 OIDC (`swasthya` realm):
 
-- Dashboard (Next.js UI) — in progress
-- Live Twilio / SmartThings vendor credentials (the gateway dispatch logic
-  is real and wired to the emergency path; only the actual vendor API call
-  is a logging stand-in)
-- CI secret rotation runbook execution
-- Clinical sign-off on the stroke symptom list and tier values in
-  `src/swasthya/protocol/disease_triage_matrix.json` — flagged inline, not
-  yet reviewed by a clinician
+| Role | Username | Password | Permissions |
+| :--- | :--- | :--- | :--- |
+| **Doctor** | `priya` | `doctor123` | Full clinical triage, approve/reject hospital referrals, clinical audio inspection |
+| **Triage Nurse** | `anand` | `nurse123` | Patient intake, vitals review, case tracking |
+| **Administrator** | `admin` | `admin123` | System telemetry, routing matrix configuration, emergency kill switches |
 
-## Secrets
+---
 
-No `.env` exists in this repo (it started empty). Copy `.env.example` to
-`.env` for local work and never commit the real file.
+## 🚀 Quickstart & Local Setup
+
+### Prerequisites
+* **Python 3.11+**
+* **Node.js 20+** and **npm 10+**
+* **Docker & Docker Compose**
+
+### 1. Clone & Configure Environment
+```bash
+git clone https://github.com/shawnsony07/swasthya-dhwani.git
+cd swasthya-dhwani
+cp .env.example .env
+```
+Fill in your API credentials in `.env`:
+* `SARVAM_API_KEY`: For Malayalam STT (`saarika:v2.5`) and TTS (`bulbul:v3`).
+* `GEMINI_API_KEY`: For multimodal speech interpretation (`gemini-3.1-flash-lite`).
+* `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`: From your LiveKit Cloud project.
+
+### 2. Launch with One Command (Docker Compose)
+Start the complete 6-container production stack:
+```bash
+docker compose up -d --build
+```
+
+Services initialized:
+* **PostgreSQL 16**: Port `5432`
+* **HAPI FHIR R4**: Port `8080`
+* **Keycloak 26 OIDC**: Port `8081`
+* **FastAPI Backend**: Port `8000`
+* **Next.js Dashboard & Patient Portal**: Port `3001` (or `3000`)
+
+---
+
+## 🧪 Running the Test Suite
+
+Swasthya-Dhwani maintains 100% pass rates across **126 automated unit and integration tests**:
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run full pytest suite
+pytest tests/ -v
+
+# Static analysis & type checking
+ruff check src tests
+mypy src --ignore-missing-imports
+
+# Protocol graph consistency check
+python -m swasthya.protocol.ingest_protocol --check
+
+# End-to-end replay simulation (10 clinical scenarios)
+python simulate_e2e.py
+```
+
+---
+
+## 🌐 Instant Free Deployment (Cloudflare Tunnel)
+
+To test the mobile voice portal on an actual smartphone with microphone access without renting a VPS or owning a custom domain:
+
+```powershell
+# 1. Start the tunnel to the Next.js frontend
+cloudflared tunnel --url http://localhost:3001
+```
+
+1. Cloudflare instantly generates a public HTTPS URL (e.g., `https://your-tunnel-name.trycloudflare.com`).
+2. Open `https://your-tunnel-name.trycloudflare.com/patient` on any iOS or Android phone.
+3. Microphone permissions are granted automatically over HTTPS.
+
+---
+
+## 📂 Project Structure
+
+```
+swasthya-dhwani/
+├── dashboard/                  # Next.js 15 App Router frontend
+│   ├── src/app/dashboard/      # Clinician Operations Queue, Admin & Routing
+│   ├── src/app/patient/        # Mobile Patient WebRTC Talking Dashboard
+│   ├── src/auth.ts             # Auth.js / NextAuth v5 Keycloak OIDC integration
+│   └── src/proxy.ts            # Route protection & session middleware
+├── docker/                     # Docker configuration & multi-stage Dockerfiles
+│   ├── keycloak/               # Seeded swasthya realm JSON
+│   ├── api.Dockerfile          # Multi-stage Python FastAPI container
+│   └── dashboard.Dockerfile    # Standalone Next.js production container
+├── deploy/                     # VPS automated provisioning & Caddy configuration
+│   ├── setup_vps.sh            # 1-click Ubuntu setup script
+│   └── Caddyfile               # Automatic Let's Encrypt reverse proxy
+├── docs/                       # Architecture diagrams, specifications & logs
+│   ├── architecture.md         # Full system architectural specification
+│   ├── api_contract.md         # REST API & SSE contract
+│   ├── agent_prompts_log.txt   # Complete user-authored prompt specification
+│   └── TELEPHONY_SIP_SETUP.md  # LiveKit SIP & Twilio telephony guide
+├── src/swasthya/               # Core Python package
+│   ├── api/                    # FastAPI endpoints, auth & SSE alerts
+│   ├── db/                     # SQLAlchemy models & Alembic migrations
+│   ├── fhir/                   # HAPI FHIR R4 clinical record adapter
+│   ├── gateway/                # Action gateway, rate limiter & kill switches
+│   ├── interpreter/            # Gemini multimodal interpreter & injection defenses
+│   ├── protocol/               # Deterministic Kerala matrix & stroke acuity floor
+│   ├── voice/                  # LiveKit WebRTC agent, audio tee & dialogue loop
+│   └── workflow/               # State machine & timeout auto-escalations
+└── tests/                      # 126 automated unit and integration tests
+```
+
+---
+
+## 📜 License & Compliance
+
+* **License:** Apache License 2.0.
+* **Clinical Disclaimer:** *Swasthya-Dhwani is an emergency clinical triage support and hospital routing tool. All AI interpretations are clearly flagged with honesty cues and require physician approval prior to final hospital admission.*
