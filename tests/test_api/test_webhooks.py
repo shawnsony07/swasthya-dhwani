@@ -5,7 +5,6 @@ import base64
 import hashlib
 import hmac
 
-import pytest
 from fastapi.testclient import TestClient
 
 from swasthya.api.app import create_app

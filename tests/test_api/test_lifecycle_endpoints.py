@@ -103,7 +103,7 @@ def test_admin_overrides_endpoint(api_app):
 
 
 def test_admin_purge_endpoint(api_app):
-    app, client = api_app
+    _app, client = api_app
     resp = client.post("/admin/purge", json={"actor": "admin_runner", "retention_days": 30})
     assert resp.status_code == 200
     data = resp.json()

@@ -13,7 +13,6 @@ import base64
 import hashlib
 import hmac
 import os
-from typing import Any
 
 import structlog
 from fastapi import APIRouter, Form, Header, HTTPException, Request, Response, status

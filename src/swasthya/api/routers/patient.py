@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import uuid
-from typing import Optional
 
 import structlog
 from fastapi import APIRouter, Query
@@ -19,8 +18,8 @@ router = APIRouter(prefix="/patient", tags=["patient"])
 
 
 class PatientTokenRequest(BaseModel):
-    name: Optional[str] = Field(default=None, description="Patient name if known")
-    district: Optional[str] = Field(default="Kerala", description="Current district")
+    name: str | None = Field(default=None, description="Patient name if known")
+    district: str | None = Field(default="Kerala", description="Current district")
 
 
 class PatientTokenResponse(BaseModel):
@@ -33,8 +32,8 @@ class PatientTokenResponse(BaseModel):
 @router.post("/token", response_model=PatientTokenResponse)
 @router.get("/token", response_model=PatientTokenResponse)
 async def create_patient_voice_token(
-    name: Optional[str] = Query(default=None),
-    district: Optional[str] = Query(default="Kerala"),
+    name: str | None = Query(default=None),
+    district: str | None = Query(default="Kerala"),
 ) -> PatientTokenResponse:
     """Issues a WebRTC access token for an inbound patient triage call."""
     from livekit.api import AccessToken, VideoGrants

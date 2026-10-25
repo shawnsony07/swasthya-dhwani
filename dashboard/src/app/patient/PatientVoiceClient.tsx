@@ -53,6 +53,44 @@ export default function PatientVoiceClient() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const speechRecRef = useRef<any>(null);
+  const avatarIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const avatarLiveRef = useRef<boolean>(false);
+
+  // Best-effort: feed the agent's live audio into the 3D avatar's lip-sync
+  // pipeline (dashboard/public/avatar). Purely additive -- if the avatar
+  // iframe isn't ready or fails for any reason, this is swallowed and the
+  // existing <audio>-element playback (muted below only on success) remains
+  // the sole, unaffected audio path.
+  const feedAvatarLiveAudio = async (track: RemoteTrack, audioElement: HTMLMediaElement) => {
+    try {
+      const win = avatarIframeRef.current?.contentWindow as any;
+      if (!win) return;
+      const ready = await Promise.resolve(win.avatarReady);
+      if (!ready || typeof win.startLiveAudio !== "function") return;
+      const stream: MediaStream =
+        track.mediaStream ?? new MediaStream([track.mediaStreamTrack]);
+      await win.startLiveAudio(stream);
+      avatarLiveRef.current = true;
+      // Avatar is now the audible source (and the lip-sync driver); mute the
+      // plain element to avoid double playback. Its play/pause/ended
+      // listeners (driving the half-duplex mic-mute state machine) still
+      // fire normally while muted.
+      audioElement.muted = true;
+    } catch (err) {
+      console.warn("Avatar live-audio feed unavailable; continuing audio-only:", err);
+    }
+  };
+
+  const stopAvatarLiveAudio = () => {
+    if (!avatarLiveRef.current) return;
+    try {
+      const win = avatarIframeRef.current?.contentWindow as any;
+      win?.stopLiveAudio?.();
+    } catch (err) {
+      console.warn("Failed to stop avatar live audio:", err);
+    }
+    avatarLiveRef.current = false;
+  };
 
   // Call duration counter
   useEffect(() => {
@@ -168,6 +206,9 @@ export default function PatientVoiceClient() {
         console.warn("Audio playback gesture notice:", err);
       });
 
+      // Best-effort; never blocks or alters the audio element above on failure.
+      void feedAvatarLiveAudio(track, audioElement);
+
       setStatusMessage("സ്വാസ്ഥ്യ അസിസ്റ്റന്റ് ബന്ധിപ്പിച്ചു (Live Assistant Connected)");
     }
   };
@@ -240,6 +281,7 @@ export default function PatientVoiceClient() {
 
       room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
         track.detach();
+        stopAvatarLiveAudio();
       });
 
       // Listen for real data packets sent by the voice agent
@@ -315,6 +357,7 @@ export default function PatientVoiceClient() {
       });
 
       room.on(RoomEvent.Disconnected, () => {
+        stopAvatarLiveAudio();
         setCallStatus("ended");
         setStatusMessage("സംഭാഷണം അവസാനിച്ചു (Call Completed)");
       });
@@ -347,6 +390,7 @@ export default function PatientVoiceClient() {
 
   // Hang Up Call
   const handleEndCall = async () => {
+    stopAvatarLiveAudio();
     if (roomRef.current) {
       try {
         await roomRef.current.disconnect();
@@ -533,6 +577,28 @@ export default function PatientVoiceClient() {
               ⏱️ {formatTime(callDuration)}
             </div>
           )}
+        </div>
+
+        {/* 3D lip-synced avatar (dashboard/public/avatar). Purely visual --
+            audio continues to flow through the hidden <audio> element
+            regardless of whether this loads successfully. */}
+        <div
+          style={{
+            margin: "0.5rem 1.25rem 0",
+            borderRadius: 16,
+            overflow: "hidden",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            background: "#10141880",
+            height: 200,
+          }}
+        >
+          <iframe
+            ref={avatarIframeRef}
+            src="/avatar/index.html"
+            title="Swasthya Dhwani Avatar"
+            allow="autoplay"
+            style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+          />
         </div>
 
         {/* Primary Interactive Orb & Acoustic Center */}

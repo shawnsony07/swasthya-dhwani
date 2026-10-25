@@ -5,9 +5,16 @@ end, not a fake. Complements `test_gateway.py` (gateway policy alone) and
 """
 from __future__ import annotations
 
+import pytest
+
 import swasthya.voice.entrypoint as entrypoint_module
 from swasthya.contracts import ActionOutcome
 from swasthya.voice.entrypoint import _EmergencyDispatcherAdapter, _get_action_gateway
+
+
+@pytest.fixture(autouse=True)
+def _force_logging_emergency_provider(monkeypatch):
+    monkeypatch.setenv("EMERGENCY_CALL_PROVIDER", "logging")
 
 
 def _reset_gateway_singleton() -> None:
@@ -16,6 +23,9 @@ def _reset_gateway_singleton() -> None:
     slate, so reset the module-level state directly."""
     entrypoint_module._action_gateway = None
     entrypoint_module._gateway_allow_list = None
+    gw, _ = _get_action_gateway()
+    if gw._kill_switch.is_active:
+        gw._kill_switch.disable(by="test_runner", reason="reset for test")
 
 
 async def test_unenrolled_caller_falls_back_to_default_on_call_contact(monkeypatch):

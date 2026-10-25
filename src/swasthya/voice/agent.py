@@ -29,8 +29,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterable
-from typing import TYPE_CHECKING, Any, Callable, Coroutine
+from collections.abc import AsyncIterable, Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from livekit import rtc
@@ -413,12 +413,14 @@ class MalayalamTriageAgent(Agent):
             ConversationOutcomeKind.EMERGENCY_CALL_FAILED,
         }
         if outcome.kind in terminal_kinds and self._on_session_end is not None:
+            on_end = self._on_session_end
+
             async def _delayed_end() -> None:
                 # Allow 6 seconds for TTS playback to conclude before disconnecting
                 await asyncio.sleep(6.0)
                 try:
-                    await self._on_session_end()
-                except Exception as exc:
+                    await on_end()
+                except Exception as exc:  # noqa: BLE001
                     logger.warning("voice.on_session_end_failed", error=str(exc))
 
             asyncio.create_task(_delayed_end())

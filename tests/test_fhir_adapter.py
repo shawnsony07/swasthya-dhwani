@@ -25,27 +25,27 @@ PATIENT_ID_SECRET = "9999988888"
 
 
 def _triage(**overrides: object) -> TriageData:
-    defaults: dict[str, object] = dict(
-        patient_identifier=PATIENT_ID_SECRET,
-        identifier_type="phone",
-        symptoms=["chest pain", "shortness of breath"],
-        raw_transcript=RAW_TRANSCRIPT_SECRET,
-        interpreted_text="patient reports chest pain",
-        interpretation_confidence=0.91,
-        interpreter_model="gemini-2.5-flash",
-    )
+    defaults: dict[str, object] = {
+        "patient_identifier": PATIENT_ID_SECRET,
+        "identifier_type": "phone",
+        "symptoms": ["chest pain", "shortness of breath"],
+        "raw_transcript": RAW_TRANSCRIPT_SECRET,
+        "interpreted_text": "patient reports chest pain",
+        "interpretation_confidence": 0.91,
+        "interpreter_model": "gemini-2.5-flash",
+    }
     defaults.update(overrides)
     return TriageData(**defaults)  # type: ignore[arg-type]
 
 
 def _audit_event(**overrides: object) -> AuditEvent:
-    defaults: dict[str, object] = dict(
-        task_id="task-123",
-        event="tier_assigned",
-        actor="rule_engine",
-        timestamp=datetime.now(UTC),
-        model_id="gemini-2.5-flash",
-    )
+    defaults: dict[str, object] = {
+        "task_id": "task-123",
+        "event": "tier_assigned",
+        "actor": "rule_engine",
+        "timestamp": datetime.now(UTC),
+        "model_id": "gemini-2.5-flash",
+    }
     defaults.update(overrides)
     return AuditEvent(**defaults)  # type: ignore[arg-type]
 

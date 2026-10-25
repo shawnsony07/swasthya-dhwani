@@ -209,8 +209,16 @@ async def scenario_emergency_window_not_cancelled_dispatches_real_gateway(h: Har
     are the honest current behavior (no Twilio/SmartThings credentials
     exist), not a test stub standing in for a real vendor call."""
     import os
+    import swasthya.voice.entrypoint as entrypoint_module
 
     os.environ["DEFAULT_EMERGENCY_CONTACT"] = "oncall-sim"
+    os.environ["EMERGENCY_CALL_PROVIDER"] = "logging"
+    entrypoint_module._action_gateway = None
+    entrypoint_module._gateway_allow_list = None
+    gw, _ = entrypoint_module._get_action_gateway()
+    if gw._kill_switch.is_active:
+        gw._kill_switch.disable(by="sim_runner", reason="e2e simulation clean slate")
+
     orchestrator, _workflow = h.new_orchestrator(emergency=_EmergencyDispatcherAdapter())
     state = ConversationState()
 

@@ -252,7 +252,7 @@ def test_reject_with_reason_returns_task_to_working(session: Session) -> None:
 
 
 def test_handle_hospital_response_accepted(session: Session) -> None:
-    task = _make_awaiting_task(session, "t_hosp", seconds_ago=0.0)
+    _make_awaiting_task(session, "t_hosp", seconds_ago=0.0)
     wf.transition(session, "t_hosp", TaskState.APPROVED, actor="doctor")
     wf.transition(session, "t_hosp", TaskState.AWAITING_HOSPITAL, actor="system")
 
@@ -266,7 +266,7 @@ def test_handle_hospital_response_accepted(session: Session) -> None:
 
 
 def test_handle_hospital_response_declined_rerouted(session: Session) -> None:
-    task = _make_awaiting_task(session, "t_decl", seconds_ago=0.0)
+    _make_awaiting_task(session, "t_decl", seconds_ago=0.0)
     wf.transition(session, "t_decl", TaskState.APPROVED, actor="doctor")
     wf.transition(session, "t_decl", TaskState.AWAITING_HOSPITAL, actor="system")
 
@@ -288,7 +288,7 @@ def test_handle_hospital_response_declined_rerouted(session: Session) -> None:
 
 
 def test_handle_ambulance_status_dispatched(session: Session) -> None:
-    task = _make_awaiting_task(session, "t_amb", seconds_ago=0.0)
+    _make_awaiting_task(session, "t_amb", seconds_ago=0.0)
     wf.transition(session, "t_amb", TaskState.APPROVED, actor="doctor")
     wf.transition(session, "t_amb", TaskState.AMBULANCE_REQUESTED, actor="system")
 
@@ -304,7 +304,7 @@ def test_handle_ambulance_status_dispatched(session: Session) -> None:
 
 
 def test_handle_ambulance_status_failed(session: Session) -> None:
-    task = _make_awaiting_task(session, "t_amb_fail", seconds_ago=0.0)
+    _make_awaiting_task(session, "t_amb_fail", seconds_ago=0.0)
     wf.transition(session, "t_amb_fail", TaskState.APPROVED, actor="doctor")
     wf.transition(session, "t_amb_fail", TaskState.AMBULANCE_REQUESTED, actor="system")
 
@@ -320,7 +320,7 @@ def test_handle_ambulance_status_failed(session: Session) -> None:
 
 
 def test_handle_follow_up_reached_care(session: Session) -> None:
-    task = _make_awaiting_task(session, "t_fu", seconds_ago=0.0)
+    _make_awaiting_task(session, "t_fu", seconds_ago=0.0)
     wf.transition(session, "t_fu", TaskState.APPROVED, actor="doctor")
     wf.transition(session, "t_fu", TaskState.AWAITING_HOSPITAL, actor="system")
     wf.transition(session, "t_fu", TaskState.FOLLOW_UP, actor="hospital")
@@ -337,7 +337,7 @@ def test_handle_follow_up_reached_care(session: Session) -> None:
 
 
 def test_handle_follow_up_lost_to_follow_up(session: Session) -> None:
-    task = _make_awaiting_task(session, "t_lost", seconds_ago=0.0)
+    _make_awaiting_task(session, "t_lost", seconds_ago=0.0)
     wf.transition(session, "t_lost", TaskState.APPROVED, actor="doctor")
     wf.transition(session, "t_lost", TaskState.AWAITING_HOSPITAL, actor="system")
     wf.transition(session, "t_lost", TaskState.FOLLOW_UP, actor="hospital")

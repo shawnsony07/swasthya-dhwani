@@ -229,7 +229,7 @@ async def _call_gemini(
     try:
         response = await client.aio.models.generate_content(
             model=model,
-            contents=[
+            contents=[  # type: ignore[arg-type]
                 types.Content(role="user", parts=_build_user_turn(audio_bytes, transcript_hint))
             ],
             config=types.GenerateContentConfig(
